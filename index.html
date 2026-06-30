@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One Piece Card Game Simulator</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: #121212; color: #ffffff; font-family: 'Segoe UI', Tahoma, sans-serif; width: 100vw; height: 100vh; overflow: hidden; }
+        
+        /* =========================================
+           LOBBY & DECK SELECTION STYLES
+           ========================================= */
+        #lobby-ui {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: #121212; z-index: 1000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #status-message { font-size: 24px; color: #b32d2e; font-weight: bold; margin-bottom: 20px; text-align: center; }
+        
+        #deck-selection-panel {
+            display: none; /* Hidden until Python says both players are here */
+            flex-direction: column; align-items: center; width: 90%; max-width: 1000px;
+        }
+        .input-group { margin-bottom: 20px; }
+        .input-group input { padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid #444; background: #1e1e1e; color: white; text-align: center; width: 250px; }
+        
+        .grid-container {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px; width: 100%; height: 50vh; overflow-y: auto;
+            background: #1a1a1a; padding: 20px; border-radius: 8px; border: 2px dashed #444;
+        }
+        .deck-card {
+            display: flex; flex-direction: column; align-items: center; cursor: pointer; background-color: #1e1e1e; padding: 10px; border-radius: 8px; border: 2px solid #333; transition: all 0.2s;
+        }
+        .deck-card:hover { transform: translateY(-5px); border-color: #777; }
+        .deck-card.selected { border-color: #b32d2e; background-color: #4a1e1f; box-shadow: 0 0 15px rgba(179, 45, 46, 0.6); transform: scale(1.05); }
+        .deck-card img { width: 100%; object-fit: cover; border-radius: 4px; }
+        .deck-name { margin-top: 8px; font-size: 12px; font-weight: bold; }
+        
+        #ready-btn { margin-top: 20px; padding: 12px 30px; font-size: 18px; font-weight: bold; cursor: pointer; background: #b32d2e; color: white; border: none; border-radius: 6px; transition: 0.2s; }
+        #ready-btn:disabled { background: #555; cursor: not-allowed; }
+        #ready-btn:hover:not(:disabled) { background: #d32f2f; }
+
+        /* =========================================
+           GAME BOARD STYLES
+           ========================================= */
+        #game-ui {
+            display: none; /* Hidden until game starts */
+            width: 100vw; height: 100vh; flex-direction: row; justify-content: space-between; align-items: stretch;
+        }
+
+        .hand-board { width: 18vw; min-width: 150px; background-color: #1a1a1a; padding: 40px 15px 20px 15px; display: flex; flex-wrap: wrap; align-content: flex-start; justify-content: center; gap: 15px; position: relative; overflow-y: auto; }
+        .hand-board.main-bg { border-right: 2px dashed #444; }
+        .hand-board.opponent-bg { border-left: 2px dashed #4a1e1f; background-color: #221818; }
+        .hand-board .slot-label { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 14px; background: #000; padding: 2px 10px; border-radius: 4px; border: 1px solid #444; }
+        
+        .center-boards { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3vh; padding: 10px; }
+        
+        .player-board { position: relative; display: grid; grid-template-areas: "life character character leader stage" "life trash cost cost deck"; grid-template-columns: 85px 100px 420px 85px 85px; grid-template-rows: 125px 125px; gap: 12px; padding: 25px; background-color: #1e1e1e; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); border: 1px solid #333; }
+        .opponent-board { grid-template-areas: "deck cost cost trash life" "stage leader character character life"; grid-template-columns: 85px 85px 420px 100px 85px; background-color: #221818; border: 1px solid #4a1e1f; }
+        
+        .name-tag { position: absolute; top: -15px; left: 20px; background: #b32d2e; padding: 4px 15px; border-radius: 4px; font-weight: bold; font-size: 13px; z-index: 10; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        .opponent-board .name-tag { left: auto; right: 20px; }
+        
+        .slot { border: 2px dashed #444; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); position: relative; color: rgba(255, 255, 255, 0.15); font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        .slot-label { position: absolute; z-index: 0; pointer-events: none; }
+        
+        .card-wrapper { display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; cursor: pointer; transition: transform 0.1s; min-width: 65px; }
+        .card-wrapper:hover { transform: scale(1.05); }
+        .card-img-container { position: relative; width: 65px; height: 91px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
+        
+        .hand-board .card-wrapper { min-width: 85px; }
+        .hand-board .card-img-container { width: 85px; height: 119px; }
+        
+        .card-img-container.tapped img { transform: rotate(90deg) scale(0.70); }
+        .card-img-container img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; box-shadow: 2px 4px 8px rgba(0,0,0,0.6); background-color: #333; }
+        
+        .card-stats { margin-top: 4px; font-size: 9px; background: #000; color: #fff; padding: 2px 5px; border-radius: 3px; border: 1px solid #555; white-space: nowrap; z-index: 5; }
+        
+        .life { grid-area: life; flex-direction: column; }
+        .character { grid-area: character; flex-direction: row; gap: 8px; flex-wrap: nowrap; justify-content: center; }
+        .leader { grid-area: leader; }
+        .stage { grid-area: stage; }
+        .trash { grid-area: trash; }
+        .cost { grid-area: cost; flex-direction: row; flex-wrap: nowrap; justify-content: center; }
+        .deck { grid-area: deck; }
+        
+        .life-card-wrapper { width: 65px; height: 91px; margin-top: -70px; z-index: 2; cursor: pointer; transition: transform 0.1s; }
+        .life-card-wrapper:hover { transform: translateY(-5px); }
+        .life-card-wrapper:first-child { margin-top: 0; }
+        .life-card-wrapper img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; box-shadow: -2px 2px 6px rgba(0,0,0,0.6); transform: rotate(90deg) scale(0.85); }
+        
+        .cost .card-wrapper { margin-left: -45px; }
+        .cost .card-wrapper:first-of-type { margin-left: 0; }
+        
+        .deck img, .stage img { width: 65px; height: 91px; object-fit: cover; border-radius: 4px; background-color: #333; cursor: pointer; }
+        .deck img:hover { transform: scale(1.05); }
+
+        /* MODAL (ZOOM VIEW) */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); display: none; justify-content: center; align-items: center; z-index: 9999; backdrop-filter: blur(5px); }
+        .modal-content { display: flex; flex-direction: row; align-items: center; gap: 40px; }
+        .modal-img-container img { height: 70vh; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+        .modal-actions { display: flex; flex-direction: column; gap: 15px; }
+        .modal-actions button { padding: 12px 24px; background-color: #333; color: white; border: 1px solid #555; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+        .modal-actions button:hover { background-color: #b32d2e; border-color: #ff4444; }
+    </style>
+</head>
+<body>
+
+    <div id="lobby-ui">
+        <div id="status-message">Connecting to Game Server...</div>
+        
+        <div id="deck-selection-panel">
+            <div class="input-group">
+                <input type="text" id="player-name-input" placeholder="Enter your Name" autocomplete="off">
+            </div>
+            
+            <div class="grid-container" id="deck-grid">
+                </div>
+
+            <button id="ready-btn" disabled onclick="submitPlayerReady()">Ready Up</button>
+        </div>
+    </div>
+
+    <div id="game-ui">
+        <div id="main-hand" class="hand-board main-bg"><span class="slot-label">Your Hand</span></div>
+
+        <div class="center-boards">
+            <div id="opponent" class="player-board opponent-board">
+                <div class="name-tag" id="opp-name">Opponent</div>
+                <div class="slot life"><span class="slot-label">Life</span></div>
+                <div class="slot character"><span class="slot-label">Character Area</span></div>
+                <div class="slot leader"><span class="slot-label">Leader</span></div>
+                <div class="slot stage"><span class="slot-label">Stage</span></div>
+                <div class="slot trash"><span class="slot-label">Trash</span></div>
+                <div class="slot cost"><span class="slot-label">Cost Area</span></div>
+                <div class="slot deck"><span class="slot-label">Deck</span></div>
+            </div>
+
+            <div id="main" class="player-board main-bg">
+                <div class="name-tag" id="main-name">You</div>
+                <div class="slot life"><span class="slot-label">Life</span></div>
+                <div class="slot character"><span class="slot-label">Character Area</span></div>
+                <div class="slot leader"><span class="slot-label">Leader</span></div>
+                <div class="slot stage"><span class="slot-label">Stage</span></div>
+                <div class="slot trash"><span class="slot-label">Trash</span></div>
+                <div class="slot cost"><span class="slot-label">Cost Area</span></div>
+                <div class="slot deck"><span class="slot-label">Deck</span></div>
+            </div>
+        </div>
+
+        <div id="opponent-hand" class="hand-board opponent-bg"><span class="slot-label">Opponent Hand</span></div>
+    </div>
+
+    <div id="card-modal" class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal-content">
+            <div class="modal-img-container"><img id="modal-img" src="" alt="Expanded Card"></div>
+            <div id="modal-actions-container" class="modal-actions">
+                <button>Rest / Set Active</button>
+                <button>Attach DON!!</button>
+                <button>Send to Trash</button>
+                <button>Return to Hand</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/game.js"></script>
+</body>
+</html>

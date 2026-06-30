@@ -78,7 +78,6 @@ def convert_card(liste_cards: list) -> tuple[Pile, Card]:
     leader = None
     pile = Pile()
     for card_init in liste_cards:
-        # FIXED: Added the missing 'types' mapping below
         card = Card(
             card_init.get('card_name', 'Unknown'),
             card_init.get('img', ''),
@@ -133,34 +132,6 @@ class Player:
             f"Characters on Board: {len(self.character_area)}/5"
         )
 
-class Game:
-    def __init__(self, player1, player2):
-        self.players = [player1, player2]
-        self.active_player_index = 0
-        self.turn_number = 1
-        self.current_phase = "RefreshPhase"
-
-    def get_active_player(self):
-        return self.players[self.active_player_index]
-
-    def next_turn(self):
-        self.active_player_index = 1 - self.active_player_index
-        self.turn_number += 1
-        self.current_phase = "RefreshPhase"
-
-    def __str__(self):
-        """Displays the overall match state, calling the __str__ of both players."""
-        active_player = self.get_active_player()
-        return (
-            f"============== GAME STATE ==============\n"
-            f"Turn: {self.turn_number} | Phase: {self.current_phase}\n"
-            f"Active Player: {active_player.name}\n"
-            f"----------------------------------------\n"
-            f"{self.players[0]}\n"
-            f"----------------------------------------\n"
-            f"{self.players[1]}\n"
-            f"========================================"
-        )
 
 # Example Execution
 if __name__ == "__main__":
@@ -168,9 +139,3 @@ if __name__ == "__main__":
     deck2 = gpd.main()
     player1 = Player('moha', deck1)
     player2 = Player('bla', deck2)
-    
-    # Initialize game
-    match = Game(player1, player2)
-    
-    # Printing the game will automatically print both players!
-    print(match)
