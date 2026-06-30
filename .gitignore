@@ -1,0 +1,11 @@
+# Node/JavaScript
+node_modules/
+.env
+
+# Python
+__pycache__/
+.venv/
+
+# Other
+images/
+json/

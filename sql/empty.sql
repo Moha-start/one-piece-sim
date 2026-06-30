@@ -1,0 +1,1 @@
+TRUNCATE TABLE attributes_cards, colors_cards, types_cards, cards, pack, rarity, category, attributes, colors, types CASCADE;
