@@ -1,11 +1,152 @@
 console.log("🚀🚀🚀 HELLO FROM GAME.JS! I AM ACTUALLY RUNNING! 🚀🚀🚀");
 
 // =========================================================
+// --- SMART CACHE & GHOST SESSION BUSTER ---
+// =========================================================
+// We use a synchronous request here to pause the game from loading 
+// until we verify the server version matches the saved version.
+try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', '/api/version', false); 
+    xhr.send();
+    
+    if (xhr.status === 200) {
+        const serverVersion = JSON.parse(xhr.responseText).version;
+        const savedVersion = sessionStorage.getItem('serverVersion');
+        
+        // If versions don't match, you restarted the server! 
+        if (savedVersion && savedVersion !== serverVersion) {
+            console.log("🔄 Server restart detected! Wiping ghost session...");
+            sessionStorage.clear(); // This deletes the stuck simCode!
+            sessionStorage.setItem('serverVersion', serverVersion); // Save new code
+            window.location.reload(); // Reload cleanly
+            throw new Error("Restarting app to clear cache..."); 
+        } 
+        // If it's a completely new visit, just save the ID
+        else if (!savedVersion) {
+            sessionStorage.setItem('serverVersion', serverVersion);
+        }
+    }
+} catch(e) {
+    console.warn("Version check bypassed.", e);
+}
+
+
+// =========================================================
+// --- START OF LOBBY SYSTEM ---
+// =========================================================
+if (!sessionStorage.getItem('simCode')) {
+    const lobbyHTML = `
+    <div id="lobby-container" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #1a1a2e; z-index: 99999; display: flex; justify-content: center; align-items: center; color: white; font-family: sans-serif;">
+        <style>
+            .modal { background: #16213e; padding: 40px; border-radius: 12px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.5); width: 350px; }
+            h1 { color: #e94560; font-size: 24px; margin-bottom: 20px;}
+            h2 { color: #e94560; font-size: 20px;}
+            button { background: #0f3460; color: white; border: 2px solid #e94560; padding: 12px 20px; margin: 10px 0; font-size: 16px; border-radius: 8px; cursor: pointer; width: 100%; transition: 0.3s; }
+            button:hover { background: #e94560; }
+            input { padding: 12px; font-size: 16px; margin: 10px 0; width: 100%; box-sizing: border-box; border-radius: 8px; border: none; outline: none; }
+        </style>
+        
+        <div id="main-menu" class="modal">
+            <h1>One Piece TCG Simulator</h1>
+            <button onclick="showStart()">Start Lobby</button>
+            <button onclick="showEnter()">Enter Lobby</button>
+        </div>
+
+        <div id="start-menu" class="modal" style="display:none;">
+            <h2>Start Lobby</h2>
+            <button onclick="createCode()">Generate Access Code</button>
+            <h3 id="room-code" style="color: #4cd137;"></h3>
+            <button id="start-btn" style="display:none;" onclick="joinGame('start')">Enter Match</button>
+        </div>
+
+        <div id="enter-menu" class="modal" style="display:none;">
+            <h2>Enter Lobby</h2>
+            <input type="text" id="guest-code" placeholder="Enter Access Code">
+            <button onclick="joinGame('enter')">Join Match</button>
+        </div>
+    </div>
+    `;
+    
+    const initLobby = () => { document.body.innerHTML = lobbyHTML; };
+    if (document.body) { initLobby(); } else { document.addEventListener('DOMContentLoaded', initLobby); }
+
+    let generatedCode = "";
+    window.showStart = () => { document.getElementById('main-menu').style.display = 'none'; document.getElementById('start-menu').style.display = 'block'; };
+    window.showEnter = () => { document.getElementById('main-menu').style.display = 'none'; document.getElementById('enter-menu').style.display = 'block'; };
+    
+    window.createCode = () => {
+        generatedCode = Math.floor(1000 + Math.random() * 9000).toString();
+        document.getElementById('room-code').innerText = "Code: " + generatedCode;
+        document.getElementById('start-btn').style.display = 'block';
+    };
+
+    window.joinGame = (type) => {
+        let code = type === 'start' ? generatedCode : document.getElementById('guest-code').value;
+        if (!code) return alert("Please enter the access code.");
+        
+        const hiddenID = "Player_" + Math.floor(Math.random() * 1000000);
+        
+        sessionStorage.setItem('simName', hiddenID);
+        sessionStorage.setItem('simCode', code);
+        window.location.reload(); 
+    };
+    
+    throw new Error("Waiting for lobby setup...");
+}
+
+// ---------------------------------------------------------
+// WebSocket Interception
+// ---------------------------------------------------------
+const simName = sessionStorage.getItem('simName');
+const simCode = sessionStorage.getItem('simCode');
+
+window.addEventListener('DOMContentLoaded', () => {
+    const leaveBtn = document.createElement('button');
+    leaveBtn.innerText = "Leave Lobby (" + simCode + ")";
+    leaveBtn.style.cssText = "position:fixed; bottom:20px; right:20px; z-index:99999; background:#e94560; color:white; border:2px solid #fff; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);";
+    leaveBtn.onclick = () => {
+        sessionStorage.clear();
+        window.location.reload();
+    };
+    document.body.appendChild(leaveBtn);
+});
+
+const originalWebSocket = window.WebSocket;
+window.WebSocket = function(url, protocols) {
+    const ws = new originalWebSocket(url, protocols);
+    
+    ws.addEventListener('open', function() {
+        ws.send(JSON.stringify({ type: "CONNECT_LOBBY", code: simCode }));
+    });
+
+    const originalSend = ws.send;
+    ws.send = function(data) {
+        try {
+            let parsed = JSON.parse(data);
+            parsed.code = simCode; 
+            if (parsed.type === 'PLAYER_READY') {
+                parsed.name = simName; 
+            }
+            originalSend.call(this, JSON.stringify(parsed));
+        } catch(e) {
+            originalSend.call(this, data);
+        }
+    };
+    return ws;
+};
+
+// =========================================================
+// --- END OF LOBBY SYSTEM ---
+// =========================================================
+
+
+// =========================================================
 // 1. STATE & LOBBY LOGIC
 // =========================================================
 let selectedDeck = null;
-let localPlayerName = ""; 
-let isMyTurn = false; // Tracks if it's the local player's turn
+let localPlayerName = sessionStorage.getItem('simName'); 
+let isMyTurn = false; 
 
 const socket = new WebSocket(`wss://ws.mohamed-server.online`);
 
@@ -62,8 +203,7 @@ function selectDeck(element, deckImg) {
 }
 
 function submitPlayerReady() {
-    const nameInput = document.getElementById('player-name-input');
-    localPlayerName = (nameInput && nameInput.value.trim()) || "Player"; 
+    localPlayerName = sessionStorage.getItem('simName');
     
     if(!selectedDeck) return;
 
@@ -73,8 +213,11 @@ function submitPlayerReady() {
         deck: selectedDeck
     }));
 
-    document.getElementById('deck-selection-panel').style.display = 'none';
-    document.getElementById('status-message').innerText = "Waiting for opponent to ready up...";
+    const deckPanel = document.getElementById('deck-selection-panel');
+    if (deckPanel) deckPanel.style.display = 'none';
+    
+    const statusMsg = document.getElementById('status-message');
+    if (statusMsg) statusMsg.innerText = "Waiting for opponent to ready up...";
 }
 
 // =========================================================
@@ -98,19 +241,33 @@ socket.onmessage = function(event) {
     
     switch(msg.type) {
         case "WAITING":
-            document.getElementById('status-message').innerText = "Waiting for Player 2 to join...";
+            const statusMsg = document.getElementById('status-message');
+            if (statusMsg) statusMsg.innerText = "Waiting for Player 2 to join...";
             break;
 
         case "CHOOSE_DECK":
-            document.getElementById('status-message').innerText = "Opponent found! Choose your deck.";
-            document.getElementById('deck-selection-panel').style.display = 'flex';
+            const msgEl = document.getElementById('status-message');
+            if (msgEl) msgEl.innerText = "Opponent found! Choose your deck.";
+            
+            const deckPanel = document.getElementById('deck-selection-panel');
+            if (deckPanel) deckPanel.style.display = 'flex';
+            
+            const oldNameInput = document.getElementById('player-name-input');
+            if (oldNameInput) oldNameInput.style.display = 'none';
+
             loadDecks();
             break;
 
         case "GAME_START":
         case "BOARD_UPDATE":
-            document.getElementById('lobby-ui').style.display = 'none';
-            document.getElementById('game-ui').style.display = 'flex';
+            const lobbyUI = document.getElementById('lobby-ui');
+            if (lobbyUI) lobbyUI.style.display = 'none';
+            
+            const gameUI = document.getElementById('game-ui');
+            if (gameUI) gameUI.style.display = 'flex';
+            
+            const sMsg = document.getElementById('status-message');
+            if (sMsg) sMsg.style.display = 'none';
 
             try {
                 const playerData = msg.data || msg.payload || msg.players || (Array.isArray(msg) ? msg : null);
@@ -156,15 +313,10 @@ function openModal(imgSrc, isActionable) {
 
     modalImg.src = getImagePath(imgSrc);
     
-    // LOGIC FIX: Safely parse boolean, string 'true', or string 'True' from Python
     const activeTurn = (isMyTurn === true || String(isMyTurn).toLowerCase() === 'true');
-    
-    // Debug log to show exactly what's happening
     console.log(`[MODAL CLICK] Is it your turn? ${activeTurn} | Is card actionable? ${isActionable}`);
     
-    // Only display action buttons if the card is yours AND it's your turn
     actionBtns.style.display = (isActionable && activeTurn) ? 'flex' : 'none';
-    
     modal.style.display = 'flex';
 }
 
@@ -206,6 +358,7 @@ function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false
 
 function renderDon(donArray, playerId, donImg) {
     const costArea = document.querySelector("#" + playerId + " .cost");
+    if (!costArea) return;
     const label = costArea.querySelector('.slot-label');
     costArea.innerHTML = '';
     if(label) costArea.appendChild(label);
@@ -222,6 +375,7 @@ function renderDon(donArray, playerId, donImg) {
 
 function renderLife(count, playerId, lifeImg) {
     const lifeArea = document.querySelector("#" + playerId + " .life");
+    if (!lifeArea) return;
     const label = lifeArea.querySelector('.slot-label');
     lifeArea.innerHTML = '';
     if(label) lifeArea.appendChild(label);
@@ -243,19 +397,21 @@ function renderLife(count, playerId, lifeImg) {
 
 function setLeader(leaderData, playerId) {
     const leaderArea = document.querySelector("#" + playerId + " .leader");
+    if (!leaderArea) return;
     const label = leaderArea.querySelector('.slot-label');
     leaderArea.innerHTML = '';
     if(label) leaderArea.appendChild(label);
 
     if (leaderData && leaderData.img && leaderData.img !== "") {
         const stats = "PWR: " + leaderData.power;
-        const isActionable = (playerId === 'main'); // NEW: Only your leader is actionable
+        const isActionable = (playerId === 'main'); 
         leaderArea.appendChild(createCardNode(leaderData.img, leaderData.is_tapped, stats, isActionable, leaderData.id));
     }
 }
 
 function setStage(stageData, playerId) {
     const stageArea = document.querySelector("#" + playerId + " .stage");
+    if (!stageArea) return;
     const label = stageArea.querySelector('.slot-label');
     stageArea.innerHTML = '';
     if(label) stageArea.appendChild(label);
@@ -264,13 +420,14 @@ function setStage(stageData, playerId) {
     let stageId = typeof stageData === 'object' ? stageData?.id : null;
 
     if (imagePath && imagePath !== "") {
-        const isActionable = (playerId === 'main'); // NEW: Only your stage is actionable
+        const isActionable = (playerId === 'main');
         stageArea.appendChild(createCardNode(imagePath, false, null, isActionable, stageId));
     }
 }
 
 function setCharacterArea(charactersData, playerId) {
     const charArea = document.querySelector("#" + playerId + " .character");
+    if (!charArea) return;
     const label = charArea.querySelector('.slot-label');
     charArea.innerHTML = '';
     if(label) charArea.appendChild(label);
@@ -280,7 +437,7 @@ function setCharacterArea(charactersData, playerId) {
     charactersData.forEach(char => {
         if(char.location === 'character') {
             const stats = "C:" + char.cost + " | P:" + char.power + " | DONx" + char.nb_don;
-            const isActionable = (playerId === 'main'); // NEW: Only your characters are actionable
+            const isActionable = (playerId === 'main'); 
             charArea.appendChild(createCardNode(char.img, char.is_tapped, stats, isActionable, char.id));
         }
     });
@@ -288,6 +445,7 @@ function setCharacterArea(charactersData, playerId) {
 
 function setDeck(playerId, deckImg) {
     const deckArea = document.querySelector("#" + playerId + " .deck");
+    if (!deckArea) return;
     const label = deckArea.querySelector('.slot-label');
     deckArea.innerHTML = '';
     if(label) deckArea.appendChild(label);
@@ -301,6 +459,7 @@ function setDeck(playerId, deckImg) {
 
 function setHand(handData, playerId, isOpponent, cardBackImg) {
     const handArea = document.querySelector("#" + playerId + "-hand");
+    if (!handArea) return;
     const label = handArea.querySelector('.slot-label');
     handArea.innerHTML = '';
     if(label) handArea.appendChild(label);
@@ -321,21 +480,23 @@ function buildBoard(mainData, oppData) {
     const mainNameEl = document.getElementById('main-name');
     const oppNameEl = document.getElementById('opp-name');
 
-    // FIX: Parse Python's bool/string robustly
     isMyTurn = (mainData.is_active === true || String(mainData.is_active).toLowerCase() === 'true');
     console.log(`[BOARD RENDER] Is it my turn?`, isMyTurn);
 
-    // Display Names & Turn Highlighting
-    mainNameEl.innerText = mainData.name || "Main Player";
-    oppNameEl.innerText = oppData.name || "Opponent";
+    if (mainNameEl) mainNameEl.innerText = "You";
+    if (oppNameEl) oppNameEl.innerText = "Opponent";
 
     const isMainActive = (mainData.is_active === true || String(mainData.is_active).toLowerCase() === 'true');
     const isOppActive = (oppData.is_active === true || String(oppData.is_active).toLowerCase() === 'true');
 
-    mainNameEl.style.color = isMainActive ? "#FFD700" : "#FFFFFF";
-    mainNameEl.style.fontWeight = isMainActive ? "bold" : "normal";
-    oppNameEl.style.color = isOppActive ? "#FFD700" : "#FFFFFF";
-    oppNameEl.style.fontWeight = isOppActive ? "bold" : "normal";
+    if (mainNameEl) {
+        mainNameEl.style.color = isMainActive ? "#FFD700" : "#FFFFFF";
+        mainNameEl.style.fontWeight = isMainActive ? "bold" : "normal";
+    }
+    if (oppNameEl) {
+        oppNameEl.style.color = isOppActive ? "#FFD700" : "#FFFFFF";
+        oppNameEl.style.fontWeight = isOppActive ? "bold" : "normal";
+    }
 
     // Build Main Player Side
     setLeader(mainData.leader, 'main');

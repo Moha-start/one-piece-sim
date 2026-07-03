@@ -4,6 +4,9 @@ import asyncio
 import websockets
 import get_premad_deck as gpd
 
+# Global lobby registry
+lobbies = {}
+
 class Game:
     def __init__(self,):
         self.players = []
@@ -77,12 +80,9 @@ class Game:
 
 async def handler(websocket):
     print("\n[PYTHON] --- NEW CONNECTION DETECTED! ---")
+    current_match = None
     
     try:
-        # Register the new client
-        match.connected_clients.add(websocket)
-        print("[PYTHON] Client added to game state.")
-        
         # 1. Immediately tell the connected client to choose a deck
         print("[PYTHON] Attempting to send CHOOSE_DECK message...")
         await websocket.send(json.dumps({
@@ -95,25 +95,39 @@ async def handler(websocket):
             print(f"[PYTHON] Received from client: {message}") 
             action = json.loads(message)
             
+            # Identify the specific lobby code provided by JS
+            code = action.get("code", "DEFAULT")
+            if code not in lobbies:
+                lobbies[code] = Game()
+                
+            current_match = lobbies[code]
+            current_match.connected_clients.add(websocket)
+            
+            # Initial join ping
+            if action["type"] == "CONNECT_LOBBY":
+                print(f"[PYTHON] Client joined lobby {code}.")
+                continue
+            
             # Handle the player submitting their deck
             if action["type"] == "PLAYER_READY":
-                print(f"[PYTHON] Player {action['name']} is ready with deck {action['deck'][:5]}!")
-                match.players.append(Player(action['name'],gpd.main(action['deck'][:5])))
-                if len(match.players)==2:
-                    game_state=match.start_game_board()
-                    match.players=[]
-                    await match.broadcast_event("GAME_START",game_state)
+                player_name = action.get('name', 'Unknown')
+                print(f"[PYTHON] Player {player_name} is ready with deck {action['deck'][:5]} in lobby {code}!")
                 
-
+                current_match.players.append(Player(player_name, gpd.main(action['deck'][:5])))
+                if len(current_match.players) == 2:
+                    game_state = current_match.start_game_board()
+                    current_match.players = []
+                    await current_match.broadcast_event("GAME_START", game_state)
+                
             elif action["type"] == "DECLARE_ATTACK":
-                await match.execute_attack(action["attacker"], action["target"])
+                await current_match.execute_attack(action["attacker"], action["target"])
                 
     except Exception as e:
         print(f"\n[PYTHON ERROR] Something went wrong in the handler: {e}\n")
         
     finally:
-        if websocket in match.connected_clients:
-            match.connected_clients.remove(websocket)
+        if current_match and websocket in current_match.connected_clients:
+            current_match.connected_clients.remove(websocket)
         print("[PYTHON] Client disconnected.")
 
 async def main():
@@ -123,6 +137,6 @@ async def main():
         await asyncio.Future()  # Run forever
 
 if __name__ == "__main__":
-    match = Game()
+    match = Game() # Original global variable preserved
     print(match)
     asyncio.run(main())
