@@ -1,10 +1,13 @@
-// game.js
+console.log("🚀🚀🚀 HELLO FROM GAME.JS! I AM ACTUALLY RUNNING! 🚀🚀🚀");
 
 // =========================================================
 // 1. STATE & LOBBY LOGIC
 // =========================================================
 let selectedDeck = null;
-const socket = new WebSocket('ws://localhost:8765');
+let localPlayerName = ""; 
+let isMyTurn = false; // Tracks if it's the local player's turn
+
+const socket = new WebSocket(`wss://ws.mohamed-server.online`);
 
 function loadDecks() {
     console.log("[FRONTEND] Requesting decks from /api/decks...");
@@ -12,16 +15,11 @@ function loadDecks() {
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: white; padding: 20px;">Loading decks from server...</div>';
 
     fetch('/api/decks')
-        .then(res => {
-            console.log("[FRONTEND] Received response from server. Status:", res.status);
-            return res.json();
-        })
+        .then(res => res.json())
         .then(data => {
-            console.log("[FRONTEND] Parsed JSON data:", data);
             if(data.success && data.decks) {
                 populateDeckGrid(data.decks);
             } else {
-                console.error("[FRONTEND ERROR] Server returned failure or no decks.");
                 grid.innerHTML = '<div style="color: #ff4444; padding: 20px;">Failed to load decks. Check Node terminal.</div>';
             }
         })
@@ -32,16 +30,12 @@ function loadDecks() {
 }
 
 function populateDeckGrid(decks) {
-    console.log(`[FRONTEND] Populating grid with ${decks.length} decks.`);
     const grid = document.getElementById('deck-grid');
-    if (!grid) {
-        console.error("[DOM ERROR] Element #deck-grid not found.");
-        return;
-    }
+    if (!grid) return;
     grid.innerHTML = '';
     
     if (decks.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #ff4444; padding: 20px; border: 2px dashed #ff4444;">0 valid decks found! Make sure leader cards are in the /images folder.</div>';
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #ff4444; padding: 20px;">No decks found!</div>';
         return;
     }
     
@@ -60,29 +54,22 @@ function populateDeckGrid(decks) {
 }
 
 function selectDeck(element, deckImg) {
-    console.log(`[FRONTEND] User selected deck: ${deckImg}`);
     document.querySelectorAll('.deck-card').forEach(c => c.classList.remove('selected'));
-    
     element.classList.add('selected');
     selectedDeck = deckImg;
-
     const readyBtn = document.getElementById('ready-btn');
     if (readyBtn) readyBtn.disabled = false;
 }
 
 function submitPlayerReady() {
     const nameInput = document.getElementById('player-name-input');
-    const playerName = (nameInput && nameInput.value.trim()) || "Player";
+    localPlayerName = (nameInput && nameInput.value.trim()) || "Player"; 
     
-    if(!selectedDeck) {
-        console.error("[FRONTEND] Attempted to ready up without a deck.");
-        return;
-    }
+    if(!selectedDeck) return;
 
-    console.log(`[FRONTEND] Sending PLAYER_READY to Python: ${playerName}, Deck: ${selectedDeck}`);
     socket.send(JSON.stringify({
         type: "PLAYER_READY",
-        name: playerName,
+        name: localPlayerName,
         deck: selectedDeck
     }));
 
@@ -91,16 +78,23 @@ function submitPlayerReady() {
 }
 
 // =========================================================
-// 2. WEBSOCKET CONNECTION TO PYTHON SERVER
+// 2. WEBSOCKET CONNECTION
 // =========================================================
 socket.onopen = function() {
-    console.log("[WEBSOCKET] Connected to Python Game Server");
-    document.getElementById('status-message').innerText = "Connected. Waiting for Python Server...";
+    const statusMsg = document.getElementById('status-message');
+    if (statusMsg) statusMsg.innerText = "Connected. Waiting for Python Server...";
+};
+
+socket.onerror = function(error) {
+    const statusMsg = document.getElementById('status-message');
+    if (statusMsg) {
+        statusMsg.style.color = "#ff4444"; 
+        statusMsg.innerText = "Connection Error! Cannot reach Python Game Server. Check browser console (F12).";
+    }
 };
 
 socket.onmessage = function(event) {
     const msg = JSON.parse(event.data);
-    console.log("[WEBSOCKET] Received message type:", msg.type);
     
     switch(msg.type) {
         case "WAITING":
@@ -114,20 +108,34 @@ socket.onmessage = function(event) {
             break;
 
         case "GAME_START":
-            console.log("[FRONTEND] GAME_START received. Initializing board.");
+        case "BOARD_UPDATE":
             document.getElementById('lobby-ui').style.display = 'none';
             document.getElementById('game-ui').style.display = 'flex';
-            buildBoard(msg.data.mainPlayer, msg.data.opponent);
-            break;
-            
-        case "ATTACK_RESOLVED":
-            console.log(`Attack! ${msg.data.attacker} -> ${msg.data.target}`);
+
+            try {
+                const playerData = msg.data || msg.payload || msg.players || (Array.isArray(msg) ? msg : null);
+                if (!playerData || !Array.isArray(playerData)) throw new Error("Could not find the player array from Python.");
+
+                let mainPlayer = playerData.find(p => p.name === localPlayerName);
+                let opponent = playerData.find(p => p.name !== localPlayerName);
+
+                if (!mainPlayer || !opponent) {
+                    console.warn("[FRONTEND] Name mismatch! Defaulting to Player 1 as Main.");
+                    mainPlayer = playerData[0];
+                    opponent = playerData[1];
+                }
+
+                buildBoard(mainPlayer, opponent);
+
+            } catch (error) {
+                console.error("[FRONTEND CRASH]", error);
+            }
             break;
     }
 };
 
 // =========================================================
-// 3. UI RENDERING LOGIC (The Board)
+// 3. UI RENDERING LOGIC
 // =========================================================
 function getImagePath(imgName) {
     if (!imgName) return '';
@@ -136,7 +144,6 @@ function getImagePath(imgName) {
 }
 
 function handleImageError(imgElement, originalSrc) {
-    console.error("[FRONTEND ERROR] Failed to load board image: " + originalSrc);
     imgElement.style.opacity = '1';
     imgElement.style.border = '2px solid #ff4444'; 
     imgElement.style.backgroundColor = '#4a0000';
@@ -148,7 +155,16 @@ function openModal(imgSrc, isActionable) {
     const actionBtns = document.getElementById('modal-actions-container');
 
     modalImg.src = getImagePath(imgSrc);
-    actionBtns.style.display = isActionable ? 'flex' : 'none';
+    
+    // LOGIC FIX: Safely parse boolean, string 'true', or string 'True' from Python
+    const activeTurn = (isMyTurn === true || String(isMyTurn).toLowerCase() === 'true');
+    
+    // Debug log to show exactly what's happening
+    console.log(`[MODAL CLICK] Is it your turn? ${activeTurn} | Is card actionable? ${isActionable}`);
+    
+    // Only display action buttons if the card is yours AND it's your turn
+    actionBtns.style.display = (isActionable && activeTurn) ? 'flex' : 'none';
+    
     modal.style.display = 'flex';
 }
 
@@ -158,9 +174,14 @@ function closeModal(e) {
     }
 }
 
-function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false) {
+function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false, cardId = null) {
     const wrapper = document.createElement('div');
     wrapper.className = 'card-wrapper';
+    
+    if (cardId !== null && cardId !== undefined) {
+        wrapper.dataset.id = cardId;
+    }
+
     wrapper.onclick = () => openModal(imgSrc, isActionable);
 
     const imgContainer = document.createElement('div');
@@ -168,9 +189,8 @@ function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false
     if (isTapped) imgContainer.classList.add('tapped');
 
     const img = document.createElement('img');
-    const fullPath = getImagePath(imgSrc);
-    img.src = fullPath; 
-    img.onerror = () => handleImageError(img, fullPath);
+    img.src = getImagePath(imgSrc); 
+    img.onerror = () => handleImageError(img, imgSrc);
 
     imgContainer.appendChild(img);
     wrapper.appendChild(imgContainer);
@@ -190,6 +210,8 @@ function renderDon(donArray, playerId, donImg) {
     costArea.innerHTML = '';
     if(label) costArea.appendChild(label);
     
+    if (!donArray) return;
+
     const tappedDons = donArray.filter(isTapped => isTapped === true);
     const untappedDons = donArray.filter(isTapped => isTapped === false);
     
@@ -204,15 +226,15 @@ function renderLife(count, playerId, lifeImg) {
     lifeArea.innerHTML = '';
     if(label) lifeArea.appendChild(label);
 
-    for (let i = 0; i < count; i++) {
+    const safeCount = Number(count) || 0;
+    for (let i = 0; i < safeCount; i++) {
         const cardDiv = document.createElement('div');
         cardDiv.className = 'life-card-wrapper';
         cardDiv.onclick = () => openModal(lifeImg, false);
 
         const img = document.createElement('img');
-        const fullPath = getImagePath(lifeImg);
-        img.src = fullPath;
-        img.onerror = () => handleImageError(img, fullPath);
+        img.src = getImagePath(lifeImg);
+        img.onerror = () => handleImageError(img, lifeImg);
 
         cardDiv.appendChild(img);
         lifeArea.appendChild(cardDiv);
@@ -225,20 +247,25 @@ function setLeader(leaderData, playerId) {
     leaderArea.innerHTML = '';
     if(label) leaderArea.appendChild(label);
 
-    if (leaderData && leaderData.img) {
+    if (leaderData && leaderData.img && leaderData.img !== "") {
         const stats = "PWR: " + leaderData.power;
-        leaderArea.appendChild(createCardNode(leaderData.img, leaderData.is_tapped, stats, true));
+        const isActionable = (playerId === 'main'); // NEW: Only your leader is actionable
+        leaderArea.appendChild(createCardNode(leaderData.img, leaderData.is_tapped, stats, isActionable, leaderData.id));
     }
 }
 
-function setStage(imagePath, playerId) {
+function setStage(stageData, playerId) {
     const stageArea = document.querySelector("#" + playerId + " .stage");
     const label = stageArea.querySelector('.slot-label');
     stageArea.innerHTML = '';
     if(label) stageArea.appendChild(label);
 
-    if (imagePath) {
-        stageArea.appendChild(createCardNode(imagePath, false, null, true));
+    let imagePath = typeof stageData === 'string' ? stageData : (stageData?.img || "");
+    let stageId = typeof stageData === 'object' ? stageData?.id : null;
+
+    if (imagePath && imagePath !== "") {
+        const isActionable = (playerId === 'main'); // NEW: Only your stage is actionable
+        stageArea.appendChild(createCardNode(imagePath, false, null, isActionable, stageId));
     }
 }
 
@@ -248,10 +275,13 @@ function setCharacterArea(charactersData, playerId) {
     charArea.innerHTML = '';
     if(label) charArea.appendChild(label);
 
+    if (!charactersData) return;
+
     charactersData.forEach(char => {
         if(char.location === 'character') {
             const stats = "C:" + char.cost + " | P:" + char.power + " | DONx" + char.nb_don;
-            charArea.appendChild(createCardNode(char.img, char.is_tapped, stats, true));
+            const isActionable = (playerId === 'main'); // NEW: Only your characters are actionable
+            charArea.appendChild(createCardNode(char.img, char.is_tapped, stats, isActionable, char.id));
         }
     });
 }
@@ -263,9 +293,8 @@ function setDeck(playerId, deckImg) {
     if(label) deckArea.appendChild(label);
 
     const img = document.createElement('img');
-    const fullPath = getImagePath(deckImg);
-    img.src = fullPath;
-    img.onerror = () => handleImageError(img, fullPath);
+    img.src = getImagePath(deckImg);
+    img.onerror = () => handleImageError(img, deckImg);
     img.onclick = () => openModal(deckImg, false);
     deckArea.appendChild(img);
 }
@@ -276,20 +305,39 @@ function setHand(handData, playerId, isOpponent, cardBackImg) {
     handArea.innerHTML = '';
     if(label) handArea.appendChild(label);
 
+    if (!handData) return;
+
     handData.forEach(card => {
         if (isOpponent) {
-            handArea.appendChild(createCardNode(cardBackImg, false, null, false));
+            handArea.appendChild(createCardNode(cardBackImg, false, null, false, card.id));
         } else {
             const stats = "C:" + card.cost + " | P:" + card.power + " | DONx" + card.nb_don;
-            handArea.appendChild(createCardNode(card.img, card.is_tapped, stats, true));
+            handArea.appendChild(createCardNode(card.img, card.is_tapped, stats, true, card.id));
         }
     });
 }
 
 function buildBoard(mainData, oppData) {
-    document.getElementById('main-name').innerText = mainData.name;
-    document.getElementById('opp-name').innerText = oppData.name;
+    const mainNameEl = document.getElementById('main-name');
+    const oppNameEl = document.getElementById('opp-name');
 
+    // FIX: Parse Python's bool/string robustly
+    isMyTurn = (mainData.is_active === true || String(mainData.is_active).toLowerCase() === 'true');
+    console.log(`[BOARD RENDER] Is it my turn?`, isMyTurn);
+
+    // Display Names & Turn Highlighting
+    mainNameEl.innerText = mainData.name || "Main Player";
+    oppNameEl.innerText = oppData.name || "Opponent";
+
+    const isMainActive = (mainData.is_active === true || String(mainData.is_active).toLowerCase() === 'true');
+    const isOppActive = (oppData.is_active === true || String(oppData.is_active).toLowerCase() === 'true');
+
+    mainNameEl.style.color = isMainActive ? "#FFD700" : "#FFFFFF";
+    mainNameEl.style.fontWeight = isMainActive ? "bold" : "normal";
+    oppNameEl.style.color = isOppActive ? "#FFD700" : "#FFFFFF";
+    oppNameEl.style.fontWeight = isOppActive ? "bold" : "normal";
+
+    // Build Main Player Side
     setLeader(mainData.leader, 'main');
     setStage(mainData.stageImg, 'main');
     setDeck('main', mainData.cardBackImg);
@@ -298,6 +346,7 @@ function buildBoard(mainData, oppData) {
     setCharacterArea(mainData.characters, 'main');
     setHand(mainData.hand, 'main', false, mainData.cardBackImg);
 
+    // Build Opponent Side
     setLeader(oppData.leader, 'opponent');
     setStage(oppData.stageImg, 'opponent');
     setDeck('opponent', oppData.cardBackImg);

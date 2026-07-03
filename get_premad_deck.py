@@ -127,13 +127,13 @@ def main(name=None):
         pack_id = choose_pack(data)
     else :
         pack_id=get_id_by_name(name)[0]['id']
-    print(pack_id)
+    #print(pack_id)
     pack = create_pack(pack_id)
     
     leaders_count = sum(1 for c in pack if c['category_name'] == 'Leader')
     main_deck_count = len(pack) - leaders_count
     
-    print(f"Total cards in pack: {len(pack)} ({leaders_count} Leader + {main_deck_count} Main Deck)")
+    #print(f"Total cards in pack: {len(pack)} ({leaders_count} Leader + {main_deck_count} Main Deck)")
     #print(pack[:10])
     return pack
 

@@ -1,5 +1,6 @@
 from random import shuffle
-import get_premad_deck as gpd
+import uuid
+from logOut import *
 
 class Pile:
     def __init__(self):
@@ -43,6 +44,7 @@ class Card:
         self.effect = effect
         self.trigger = trigger
         self.tapped = False
+        self.id=uuid.uuid4()
         
         # Base stats
         self.base_cost = cost
@@ -105,7 +107,7 @@ class Player:
         
         # FIXED: Safely get base_cost just in case a deck was loaded without a leader
         self.life = self.leader.base_cost if self.leader else 0 
-        self.hand = []
+        self.hand = [self.deck.get() for _ in range(5)]
         
         # Board Zones
         self.character_area = []  # Max 5 CharacterCards
@@ -134,8 +136,3 @@ class Player:
 
 
 # Example Execution
-if __name__ == "__main__":
-    deck1 = gpd.main()
-    deck2 = gpd.main()
-    player1 = Player('moha', deck1)
-    player2 = Player('bla', deck2)

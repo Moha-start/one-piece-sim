@@ -8,30 +8,15 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background-color: #121212; color: #ffffff; font-family: 'Segoe UI', Tahoma, sans-serif; width: 100vw; height: 100vh; overflow: hidden; }
         
-        /* =========================================
-           LOBBY & DECK SELECTION STYLES
-           ========================================= */
-        #lobby-ui {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background-color: #121212; z-index: 1000;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-        }
+        #lobby-ui { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #121212; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #status-message { font-size: 24px; color: #b32d2e; font-weight: bold; margin-bottom: 20px; text-align: center; }
         
-        #deck-selection-panel {
-            display: none; /* Hidden until Python says both players are here */
-            flex-direction: column; align-items: center; width: 90%; max-width: 1000px;
-        }
+        #deck-selection-panel { display: none; flex-direction: column; align-items: center; width: 90%; max-width: 1000px; }
         .input-group { margin-bottom: 20px; }
         .input-group input { padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid #444; background: #1e1e1e; color: white; text-align: center; width: 250px; }
         
-        .grid-container {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px; width: 100%; height: 50vh; overflow-y: auto;
-            background: #1a1a1a; padding: 20px; border-radius: 8px; border: 2px dashed #444;
-        }
-        .deck-card {
-            display: flex; flex-direction: column; align-items: center; cursor: pointer; background-color: #1e1e1e; padding: 10px; border-radius: 8px; border: 2px solid #333; transition: all 0.2s;
-        }
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px; width: 100%; height: 50vh; overflow-y: auto; background: #1a1a1a; padding: 20px; border-radius: 8px; border: 2px dashed #444; }
+        .deck-card { display: flex; flex-direction: column; align-items: center; cursor: pointer; background-color: #1e1e1e; padding: 10px; border-radius: 8px; border: 2px solid #333; transition: all 0.2s; }
         .deck-card:hover { transform: translateY(-5px); border-color: #777; }
         .deck-card.selected { border-color: #b32d2e; background-color: #4a1e1f; box-shadow: 0 0 15px rgba(179, 45, 46, 0.6); transform: scale(1.05); }
         .deck-card img { width: 100%; object-fit: cover; border-radius: 4px; }
@@ -41,13 +26,7 @@
         #ready-btn:disabled { background: #555; cursor: not-allowed; }
         #ready-btn:hover:not(:disabled) { background: #d32f2f; }
 
-        /* =========================================
-           GAME BOARD STYLES
-           ========================================= */
-        #game-ui {
-            display: none; /* Hidden until game starts */
-            width: 100vw; height: 100vh; flex-direction: row; justify-content: space-between; align-items: stretch;
-        }
+        #game-ui { display: none; width: 100vw; height: 100vh; flex-direction: row; justify-content: space-between; align-items: stretch; }
 
         .hand-board { width: 18vw; min-width: 150px; background-color: #1a1a1a; padding: 40px 15px 20px 15px; display: flex; flex-wrap: wrap; align-content: flex-start; justify-content: center; gap: 15px; position: relative; overflow-y: auto; }
         .hand-board.main-bg { border-right: 2px dashed #444; }
@@ -56,8 +35,8 @@
         
         .center-boards { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3vh; padding: 10px; }
         
-        .player-board { position: relative; display: grid; grid-template-areas: "life character character leader stage" "life trash cost cost deck"; grid-template-columns: 85px 100px 420px 85px 85px; grid-template-rows: 125px 125px; gap: 12px; padding: 25px; background-color: #1e1e1e; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); border: 1px solid #333; }
-        .opponent-board { grid-template-areas: "deck cost cost trash life" "stage leader character character life"; grid-template-columns: 85px 85px 420px 100px 85px; background-color: #221818; border: 1px solid #4a1e1f; }
+        .player-board { position: relative; display: grid; grid-template-areas: "life character character leader stage don-deck" "life trash cost cost deck don-deck"; grid-template-columns: 85px 100px 420px 85px 85px 85px; grid-template-rows: 125px 125px; gap: 12px; padding: 25px; background-color: #1e1e1e; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); border: 1px solid #333; }
+        .opponent-board { grid-template-areas: "don-deck deck cost cost trash life" "don-deck stage leader character character life"; grid-template-columns: 85px 85px 85px 420px 100px 85px; background-color: #221818; border: 1px solid #4a1e1f; }
         
         .name-tag { position: absolute; top: -15px; left: 20px; background: #b32d2e; padding: 4px 15px; border-radius: 4px; font-weight: bold; font-size: 13px; z-index: 10; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
         .opponent-board .name-tag { left: auto; right: 20px; }
@@ -85,6 +64,9 @@
         .cost { grid-area: cost; flex-direction: row; flex-wrap: nowrap; justify-content: center; }
         .deck { grid-area: deck; }
         
+        .don-deck { grid-area: don-deck; flex-direction: column; }
+        .don-deck img { width: 65px; height: 91px; object-fit: cover; border-radius: 4px; box-shadow: 2px 4px 8px rgba(0,0,0,0.8); }
+
         .life-card-wrapper { width: 65px; height: 91px; margin-top: -70px; z-index: 2; cursor: pointer; transition: transform 0.1s; }
         .life-card-wrapper:hover { transform: translateY(-5px); }
         .life-card-wrapper:first-child { margin-top: 0; }
@@ -96,7 +78,6 @@
         .deck img, .stage img { width: 65px; height: 91px; object-fit: cover; border-radius: 4px; background-color: #333; cursor: pointer; }
         .deck img:hover { transform: scale(1.05); }
 
-        /* MODAL (ZOOM VIEW) */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); display: none; justify-content: center; align-items: center; z-index: 9999; backdrop-filter: blur(5px); }
         .modal-content { display: flex; flex-direction: row; align-items: center; gap: 40px; }
         .modal-img-container img { height: 70vh; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
@@ -104,7 +85,7 @@
         .modal-actions button { padding: 12px 24px; background-color: #333; color: white; border: 1px solid #555; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
         .modal-actions button:hover { background-color: #b32d2e; border-color: #ff4444; }
     </style>
-</head>
+    </head>
 <body>
 
     <div id="lobby-ui">
@@ -135,6 +116,11 @@
                 <div class="slot trash"><span class="slot-label">Trash</span></div>
                 <div class="slot cost"><span class="slot-label">Cost Area</span></div>
                 <div class="slot deck"><span class="slot-label">Deck</span></div>
+                
+                <div class="slot don-deck">
+                    <span class="slot-label">DON Deck</span>
+                    <img src="/images/DON.png" alt="Don Deck">
+                </div>
             </div>
 
             <div id="main" class="player-board main-bg">
@@ -146,6 +132,11 @@
                 <div class="slot trash"><span class="slot-label">Trash</span></div>
                 <div class="slot cost"><span class="slot-label">Cost Area</span></div>
                 <div class="slot deck"><span class="slot-label">Deck</span></div>
+                
+                <div class="slot don-deck">
+                    <span class="slot-label">DON Deck</span>
+                    <img src="/images/DON.png" alt="Don Deck">
+                </div>
             </div>
         </div>
 
@@ -164,6 +155,6 @@
         </div>
     </div>
 
-    <script src="/game.js"></script>
+    <script src="/game.js?v=3"></script>
 </body>
 </html>
