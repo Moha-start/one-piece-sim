@@ -107,15 +107,27 @@ class Player:
         
         # FIXED: Safely get base_cost just in case a deck was loaded without a leader
         self.life = self.leader.base_cost if self.leader else 0 
-        self.hand = [self.deck.get() for _ in range(5)]
+        self.hand = {card.id: card for card in (self.deck.get() for _ in range(5))}
+
         
         # Board Zones
-        self.character_area = []  # Max 5 CharacterCards
+        self.character_area = {}  # Max 5 CharacterCards
         self.stage_area = None    # Max 1 StageCard
-        self.don_deck = ['DON!!' for _ in range(10)]
+        self.don_deck = [0,0]
         self.active_don = []
         self.trash = []
 
+    def play_character(self,cardId):
+
+        if len(self.character_area)>=5:
+            print("[PYTHON]the stage if full try later")
+            return 
+        card:Card=self.hand.pop(cardId)
+        self.character_area[card.id]=card
+        print(f"Player {self.name} will play card {cardId}")
+        return True
+        
+        
     def draw_card(self):
         if not self.deck.is_empty():
             card = self.deck.get()

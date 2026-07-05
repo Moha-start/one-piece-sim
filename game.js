@@ -1,5 +1,5 @@
 console.log("🚀🚀🚀 HELLO FROM GAME.JS! I AM ACTUALLY RUNNING! 🚀🚀🚀");
-
+// TODO : modify list of action so it depends on the location and type
 // =========================================================
 // --- SMART CACHE & GHOST SESSION BUSTER ---
 // =========================================================
@@ -305,8 +305,21 @@ function handleImageError(imgElement, originalSrc) {
     imgElement.style.border = '2px solid #ff4444'; 
     imgElement.style.backgroundColor = '#4a0000';
 }
+function handleCardAction(actionName, cardId) {
+    // 1. Close the modal so it gets out of the way
+    document.getElementById('card-modal').style.display = 'none';
 
-function openModal(imgSrc, isActionable) {
+    // 2. Send the action and the card ID to your Python backend
+    socket.send(JSON.stringify({
+        type: "CARD_ACTION",
+        action: actionName,
+        card_id: cardId,
+        player_name: localPlayerName 
+    }));
+
+    console.log(`Sent action: ${actionName} for card: ${cardId}`);
+}
+function openModal(imgSrc, isActionable, location = null, type = null, cardId = null) {
     const modal = document.getElementById('card-modal');
     const modalImg = document.getElementById('modal-img');
     const actionBtns = document.getElementById('modal-actions-container');
@@ -314,9 +327,67 @@ function openModal(imgSrc, isActionable) {
     modalImg.src = getImagePath(imgSrc);
     
     const activeTurn = (isMyTurn === true || String(isMyTurn).toLowerCase() === 'true');
-    console.log(`[MODAL CLICK] Is it your turn? ${activeTurn} | Is card actionable? ${isActionable}`);
+    console.log(`[MODAL CLICK] Is it your turn? ${activeTurn} | Is card actionable? ${isActionable} | Location: ${location} | Type: ${type}`);
     
-    actionBtns.style.display = (isActionable && activeTurn) ? 'flex' : 'none';
+    // Clear out current buttons so we can dynamically add based on location AND type
+    actionBtns.innerHTML = '';
+    
+    if (isActionable && activeTurn) {
+        
+        // --- EASILY MODIFIABLE ACTION BUTTONS START ---
+        
+        // 1. If the card is physically in your HAND
+        if (location === 'hand') {
+            // FIX: Safely convert the type to a string so arrays don't crash the script!
+            let lowerType = String(type || '').toLowerCase();
+            
+            // FIX: Use .includes() so it catches 'character' even if it's inside a list
+            if (lowerType.includes('character')) {
+                actionBtns.innerHTML += `<button onclick="handleCardAction('PLAY_CHARACTER', '${cardId}')">Play Character</button>`;
+            } else if (lowerType.includes('event')) {
+                actionBtns.innerHTML += `<button onclick="handleCardAction('USE_EVENT', '${cardId}')">Use Event</button>`;
+            } else if (lowerType.includes('stage')) {
+                actionBtns.innerHTML += `<button onclick="handleCardAction('PLAY_STAGE', '${cardId}')">Play Stage</button>`;
+            } else {
+                actionBtns.innerHTML += `<button onclick="handleCardAction('PLAY_CARD', '${cardId}')">Play Card</button>`;
+            }
+            actionBtns.innerHTML += `<button onclick="handleCardAction('TRASH_CARD', '${cardId}')">Trash</button>`;
+        }
+        
+        // 2. If the card is physically on the BOARD in the CHARACTER AREA
+        else if (location === 'character') {
+            actionBtns.innerHTML += `<button onclick="handleCardAction('TOGGLE_REST', '${cardId}')">Rest / Set Active</button>`;
+            actionBtns.innerHTML += `<button onclick="handleCardAction('ATTACK', '${cardId}')">Attack</button>`;
+        } 
+        
+        // 3. If the card is physically in the LEADER AREA
+        else if (location === 'leader') {
+            actionBtns.innerHTML += `<button onclick="handleCardAction('TOGGLE_REST', '${cardId}')">Rest / Set Active</button>`;
+            actionBtns.innerHTML += `<button onclick="handleCardAction('ATTACK', '${cardId}')">Attack</button>`;
+        } 
+        
+        // 4. If the card is physically in the COST AREA (DON deck)
+        else if (location === 'cost') {
+            actionBtns.innerHTML += `<button onclick="handleCardAction('ATTACH_DON', '${cardId}')">Attach DON!!</button>`;
+        }
+        
+        // 5. If the card is physically in the STAGE AREA
+        else if (location === 'stage') {
+            actionBtns.innerHTML += `<button onclick="handleCardAction('USE_STAGE_EFFECT', '${cardId}')">Use Effect</button>`;
+        }
+        
+        // Fallback
+        else {
+            actionBtns.innerHTML += `<button>Default Action</button>`;
+        }
+        
+        // --- EASILY MODIFIABLE ACTION BUTTONS END ---
+        
+        actionBtns.style.display = 'flex';
+    } else {
+        actionBtns.style.display = 'none';
+    }
+    
     modal.style.display = 'flex';
 }
 
@@ -326,7 +397,7 @@ function closeModal(e) {
     }
 }
 
-function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false, cardId = null) {
+function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false, cardId = null, location = null, type = null) {
     const wrapper = document.createElement('div');
     wrapper.className = 'card-wrapper';
     
@@ -334,7 +405,7 @@ function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false
         wrapper.dataset.id = cardId;
     }
 
-    wrapper.onclick = () => openModal(imgSrc, isActionable);
+    wrapper.onclick = () => openModal(imgSrc, isActionable, location, type, cardId);
 
     const imgContainer = document.createElement('div');
     imgContainer.className = 'card-img-container';
@@ -369,7 +440,8 @@ function renderDon(donArray, playerId, donImg) {
     const untappedDons = donArray.filter(isTapped => isTapped === false);
     
     [...tappedDons, ...untappedDons].forEach(isTapped => {
-        costArea.appendChild(createCardNode(donImg, isTapped, null, false));
+        // Location = 'cost', Type = 'don'
+        costArea.appendChild(createCardNode(donImg, isTapped, null, false, null, 'cost', 'don'));
     });
 }
 
@@ -384,7 +456,8 @@ function renderLife(count, playerId, lifeImg) {
     for (let i = 0; i < safeCount; i++) {
         const cardDiv = document.createElement('div');
         cardDiv.className = 'life-card-wrapper';
-        cardDiv.onclick = () => openModal(lifeImg, false);
+        // Location = 'life', Type = 'card' (or life)
+        cardDiv.onclick = () => openModal(lifeImg, false, 'life', 'card');
 
         const img = document.createElement('img');
         img.src = getImagePath(lifeImg);
@@ -405,7 +478,8 @@ function setLeader(leaderData, playerId) {
     if (leaderData && leaderData.img && leaderData.img !== "") {
         const stats = "PWR: " + leaderData.power;
         const isActionable = (playerId === 'main'); 
-        leaderArea.appendChild(createCardNode(leaderData.img, leaderData.is_tapped, stats, isActionable, leaderData.id));
+        // Location = 'leader', Type = 'leader'
+        leaderArea.appendChild(createCardNode(leaderData.img, leaderData.is_tapped, stats, isActionable, leaderData.id, 'leader', 'leader'));
     }
 }
 
@@ -421,7 +495,8 @@ function setStage(stageData, playerId) {
 
     if (imagePath && imagePath !== "") {
         const isActionable = (playerId === 'main');
-        stageArea.appendChild(createCardNode(imagePath, false, null, isActionable, stageId));
+        // Location = 'stage', Type = 'stage'
+        stageArea.appendChild(createCardNode(imagePath, false, null, isActionable, stageId, 'stage', 'stage'));
     }
 }
 
@@ -435,10 +510,14 @@ function setCharacterArea(charactersData, playerId) {
     if (!charactersData) return;
 
     charactersData.forEach(char => {
-        if(char.location === 'character') {
+        let loc = char.location || 'character';
+        let typ = char.type || 'character';
+        
+        if(loc === 'character') {
             const stats = "C:" + char.cost + " | P:" + char.power + " | DONx" + char.nb_don;
             const isActionable = (playerId === 'main'); 
-            charArea.appendChild(createCardNode(char.img, char.is_tapped, stats, isActionable, char.id));
+            // Ensures both location and type are explicitly passed along
+            charArea.appendChild(createCardNode(char.img, char.is_tapped, stats, isActionable, char.id, loc, typ));
         }
     });
 }
@@ -453,7 +532,9 @@ function setDeck(playerId, deckImg) {
     const img = document.createElement('img');
     img.src = getImagePath(deckImg);
     img.onerror = () => handleImageError(img, deckImg);
-    img.onclick = () => openModal(deckImg, false);
+    
+    // Location = 'deck', Type = 'card'
+    img.onclick = () => openModal(deckImg, false, 'deck', 'card');
     deckArea.appendChild(img);
 }
 
@@ -467,11 +548,14 @@ function setHand(handData, playerId, isOpponent, cardBackImg) {
     if (!handData) return;
 
     handData.forEach(card => {
+        let loc = card.location || 'hand';
+        let typ = card.type || 'card';
+        
         if (isOpponent) {
-            handArea.appendChild(createCardNode(cardBackImg, false, null, false, card.id));
+            handArea.appendChild(createCardNode(cardBackImg, false, null, false, card.id, loc, typ));
         } else {
             const stats = "C:" + card.cost + " | P:" + card.power + " | DONx" + card.nb_don;
-            handArea.appendChild(createCardNode(card.img, card.is_tapped, stats, true, card.id));
+            handArea.appendChild(createCardNode(card.img, card.is_tapped, stats, true, card.id, loc, typ));
         }
     });
 }

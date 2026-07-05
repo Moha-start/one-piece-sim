@@ -6,7 +6,7 @@ import get_premad_deck as gpd
 
 # Global lobby registry
 lobbies = {}
-
+# TODO : add how to play a cards upon receving it
 class Game:
     def __init__(self,):
         self.players = []
@@ -50,32 +50,41 @@ class Game:
     
     def start_game_board(self):
         data=[{},{}]
+        
+        # --- PLAYER 1 SETUP ---
         data[0]['name']=self.players[0].name
         data[0]["cardBackImg"]= "normal.png"
         data[0]["donImg"]= "DON.png"
         data[0]['stageImg']=None
         data[0]['lifeCount']=self.players[0].life
         data[0]['donCards']=[]
-        data[0]['leader']={'img':self.players[0].leader.img,'power':self.players[0].leader.current_power,'is_tapped':False}
+        data[0]['leader']={'img':self.players[0].leader.img,'power':self.players[0].leader.current_power,'is_tapped':False, 'location': 'leader', 'type': 'leader'}
         data[0]['characters']=[]
         data[0]['hand']=[]
         data[0]["is_active"]=True
-        for card in self.players[0].hand:
+        
+        for card in self.players[0].hand.values():
             card:Card
-            data[0]['hand'].append({"img": card.img,"cost": card.current_cost,"power": card.current_power,"nb_don": 0,"is_tapped": False})
+            card_type = getattr(card, 'types', 'card') # Gracefully pull type (character, event, stage)
+            data[0]['hand'].append({"img": card.img,"cost": card.current_cost,"power": card.current_power,"nb_don": 0,"is_tapped": False, "location": "hand", "type": card_type, "id": str(getattr(card, 'id', ''))})
+            
+        # --- PLAYER 2 SETUP ---
         data[1]['name']=self.players[1].name
         data[1]["cardBackImg"]= "normal.png"
         data[1]["donImg"]= "DON.png"
         data[1]['stageImg']=None
         data[1]['lifeCount']=self.players[1].life
         data[1]['donCards']=[]
-        data[1]['leader']={'img':self.players[1].leader.img,'power':self.players[1].leader.current_power,'is_tapped':False}
+        data[1]['leader']={'img':self.players[1].leader.img,'power':self.players[1].leader.current_power,'is_tapped':False, 'location': 'leader', 'type': 'leader'}
         data[1]['characters']=[]
         data[1]['hand']=[]
         data[1]["is_active"]=False
-        for card in self.players[1].hand:
+        
+        for card in self.players[1].hand.values():
             card:Card
-            data[1]['hand'].append({"img": card.img,"cost": card.current_cost,"power": card.current_power,"nb_don": 0,"is_tapped": False,"id":str(card.id)})
+            card_type = getattr(card, 'types', 'card')
+            data[1]['hand'].append({"img": card.img,"cost": card.current_cost,"power": card.current_power,"nb_don": 0,"is_tapped": False,"id":str(getattr(card, 'id', '')), "location": "hand", "type": card_type})
+            
         return data
 
 async def handler(websocket):
@@ -92,7 +101,7 @@ async def handler(websocket):
         
         # 2. Listen for incoming moves from the frontend JS
         async for message in websocket:
-            print(f"[PYTHON] Received from client: {message}") 
+            #print(f"[PYTHON] Received from client: {message}") 
             action = json.loads(message)
             
             # Identify the specific lobby code provided by JS
@@ -102,13 +111,12 @@ async def handler(websocket):
                 
             current_match = lobbies[code]
             current_match.connected_clients.add(websocket)
-            
+            #PrettyPrint(action)
             # Initial join ping
             if action["type"] == "CONNECT_LOBBY":
                 print(f"[PYTHON] Client joined lobby {code}.")
                 continue
             
-            # Handle the player submitting their deck
             if action["type"] == "PLAYER_READY":
                 player_name = action.get('name', 'Unknown')
                 print(f"[PYTHON] Player {player_name} is ready with deck {action['deck'][:5]} in lobby {code}!")
@@ -116,12 +124,20 @@ async def handler(websocket):
                 current_match.players.append(Player(player_name, gpd.main(action['deck'][:5])))
                 if len(current_match.players) == 2:
                     game_state = current_match.start_game_board()
-                    current_match.players = []
+                    #current_match.players = []
                     await current_match.broadcast_event("GAME_START", game_state)
                 
             elif action["type"] == "DECLARE_ATTACK":
                 await current_match.execute_attack(action["attacker"], action["target"])
-                
+            
+            elif action["type"]=="CARD_ACTION":
+                # Make sure these actions match the strings sent from handleCardAction in JS
+                if action["action"] in ["PLAY_CARD", "PLAY_CHARACTER", "USE_EVENT", "PLAY_STAGE"]:
+                    # FIX: Changed 'match' to 'current_match'
+                    print(current_match.active_player_index,len(current_match.players))
+                    current_match.players[current_match.active_player_index].play_character(action['card_id'])
+
+                    print(f"Player {player.name} will play card {action['card_id']}")
     except Exception as e:
         print(f"\n[PYTHON ERROR] Something went wrong in the handler: {e}\n")
         
