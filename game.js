@@ -1,5 +1,9 @@
 console.log("🚀🚀🚀 HELLO FROM GAME.JS! I AM ACTUALLY RUNNING! 🚀🚀🚀");
-//TODO : add in here so it can ecept : await current_match.broadcast_event("END_ROUND_END", {"STATUS":"OK"}) and work with it
+// =========================================================
+// --- SMART CACHE & GHOST SESSION BUSTER ---
+// =========================================================
+// We use a synchronous request here to pause the game from loading 
+// until we verify the server version matches the saved version.
 try {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', '/api/version', false); 
@@ -269,36 +273,46 @@ socket.onmessage = function(event) {
             loadDecks();
             break;
 
-        case "PLAY_CARD_RESPANSE":
-            // Extract card_id from the broadcast payload
-            let playedCardId = null;
-            const payloadData = msg.data || msg; 
+case "PLAY_CARD_RESPANSE":
+            const payloadData = msg.data || msg;
             
-            for (let key in payloadData) {
-                if (key !== "type" && payloadData[key] === "OK") {
-                    playedCardId = key;
-                    break;
+            // 1. Grab the exact card and the player who played it
+            let playedCardId = payloadData.card_id;
+            let playerWhoPlayed = payloadData.player_name;
+
+            // Fallback just in case the backend hasn't restarted yet
+            if (!playedCardId) {
+                for (let key in payloadData) {
+                    if (key !== "type" && payloadData[key] === "OK") {
+                        playedCardId = key; break;
+                    }
                 }
             }
 
             if (playedCardId) {
                 const cardElement = document.querySelector(`.card-wrapper[data-id='${playedCardId}']`);
-                const characterArea = document.querySelector('#main .character');
+                
+                // 2. THE FIX: Dynamically select the board side based on the player
+                const targetBoard = (playerWhoPlayed === localPlayerName) ? '#main' : '#opponent';
+                const characterArea = document.querySelector(`${targetBoard} .character`);
 
                 if (cardElement && characterArea) {
-                    // Physically move the DOM element to the character area
+                    // Physically move the DOM element to the correct character area
                     characterArea.appendChild(cardElement);
                     
-                    // Update the onclick handler so the modal reflects its new location
+                    // 3. Update the onclick handler
                     const imgNode = cardElement.querySelector('img');
                     if (imgNode) {
                         let rawSrc = imgNode.getAttribute('src').split('?')[0]; // strip cache buster
                         if (rawSrc.startsWith(window.location.origin)) {
                             rawSrc = rawSrc.replace(window.location.origin, '');
                         }
-                        cardElement.onclick = () => openModal(rawSrc, true, 'character', 'character', playedCardId);
+                        
+                        // Prevent the local player from interacting with the opponent's cards
+                        const isActionableForMe = (playerWhoPlayed === localPlayerName);
+                        cardElement.onclick = () => openModal(rawSrc, isActionableForMe, 'character', 'character', playedCardId);
                     }
-                    console.log(`[FRONTEND] Card ${playedCardId} successfully moved to character area.`);
+                    console.log(`[FRONTEND] Card ${playedCardId} successfully moved to ${targetBoard} area.`);
                 }
             }
             break;
@@ -313,9 +327,6 @@ socket.onmessage = function(event) {
             
             const sMsg = document.getElementById('status-message');
             if (sMsg) sMsg.style.display = 'none';
-            
-            const endBtn = document.getElementById('end-round-btn');
-            if (endBtn) endBtn.style.display = 'block';
 
             try {
                 const playerData = msg.data || msg.payload || msg.players || (Array.isArray(msg) ? msg : null);
@@ -334,6 +345,37 @@ socket.onmessage = function(event) {
 
             } catch (error) {
                 console.error("[FRONTEND CRASH]", error);
+            }
+            break;
+        
+        case "END_ROUND_END":
+            // Check if status is OK (handle both nested msg.data.STATUS or direct msg.STATUS)
+            const status = msg.data?.STATUS || msg.STATUS;
+            
+            if (status === "OK") {
+                // Toggle the global turn variable
+                isMyTurn = !isMyTurn;
+                
+                // Automatically flip the visual highlights on the UI
+                const mNameEl = document.getElementById('main-name');
+                const oNameEl = document.getElementById('opp-name');
+                
+                if (mNameEl) {
+                    mNameEl.style.color = isMyTurn ? "#FFD700" : "#FFFFFF";
+                    mNameEl.style.fontWeight = isMyTurn ? "bold" : "normal";
+                }
+                if (oNameEl) {
+                    oNameEl.style.color = !isMyTurn ? "#FFD700" : "#FFFFFF";
+                    oNameEl.style.fontWeight = !isMyTurn ? "bold" : "normal";
+                }
+
+                // Hide or show the End Round button based on whose turn it is
+                const endBtn = document.getElementById('end-round-btn');
+                if (endBtn) {
+                    endBtn.style.display = isMyTurn ? 'block' : 'none';
+                }
+
+                console.log("[FRONTEND] End round received! Switched primary player. isMyTurn:", isMyTurn);
             }
             break;
     }
@@ -637,6 +679,12 @@ function buildBoard(mainData, oppData) {
 
     isMyTurn = (mainData.is_active === true || String(mainData.is_active).toLowerCase() === 'true');
     console.log(`[BOARD RENDER] Is it my turn?`, isMyTurn);
+
+    // Toggle End Round Button visibility
+    const endBtn = document.getElementById('end-round-btn');
+    if (endBtn) {
+        endBtn.style.display = isMyTurn ? 'block' : 'none';
+    }
 
     if (mainNameEl) mainNameEl.innerText = "You";
     if (oppNameEl) oppNameEl.innerText = "Opponent";

@@ -3,6 +3,7 @@ import json
 import asyncio
 import websockets
 import get_premad_deck as gpd
+from random import randint
 
 # Global lobby registry
 lobbies = {}
@@ -10,7 +11,7 @@ lobbies = {}
 class Game:
     def __init__(self,):
         self.players = []
-        self.active_player_index = 0
+        self.active_player_index = randint(0,1)
         self.turn_number = 1
         self.current_phase = "RefreshPhase"
         self.connected_clients = set() # Store WebSocket connections
@@ -122,7 +123,7 @@ async def handler(websocket):
             if action["type"] == "CONNECT_LOBBY":
                 print(f"[PYTHON] Client joined lobby {code}.")
                 continue
-            
+            #print(action)
             if action["type"] == "PLAYER_READY":
                 player_name = action.get('name', 'Unknown')
                 print(f"[PYTHON] Player {player_name} is ready with deck {action['deck'][:5]} in lobby {code}!")
@@ -136,17 +137,27 @@ async def handler(websocket):
             elif action["type"] == "DECLARE_ATTACK":
                 await current_match.execute_attack(action["attacker"], action["target"])
             
-            elif action["type"]=="CARD_ACTION":
+            elif action["type"]== "CARD_ACTION":
+                
                 # Make sure these actions match the strings sent from handleCardAction in JS
                 if action["action"] in ["PLAY_CARD", "PLAY_CHARACTER", "USE_EVENT", "PLAY_STAGE"]:
-                    # FIX: Changed 'match' to 'current_match'
+                    print(action)
                     current_match.players[current_match.active_player_index].play_character(action['card_id'])
-                    await current_match.broadcast_event("PLAY_CARD_RESPANSE", {action['card_id']:"OK"})
                     
-            elif action['type']=="END_ROUND":
-                current_match.active_player_index = (current_match.active_player_index + 1) % 2
-                await current_match.broadcast_event("END_ROUND_END", {"STATUS":"OK"})
+                    # FIX: Broadcast both the card_id AND the player who played it
+                    await current_match.broadcast_event("PLAY_CARD_RESPANSE", {
+                        "card_id": action['card_id'],
+                        "player_name": action.get('player_name')
+                    })
                     
+            elif action['type']== "END_ROUND":
+                try :
+                    current_match.active_player_index = (current_match.active_player_index + 1) % 2
+                    current_match.turn_number+=1
+                    print("the round has ended")
+                    await current_match.broadcast_event("END_ROUND_END", {"STATUS":"OK"})
+                except e:
+                    print(f"[PYTHON] there is an error {e}")
     except Exception as e:
         print(f"\n[PYTHON ERROR] Something went wrong in the handler: {e}\n")
         
