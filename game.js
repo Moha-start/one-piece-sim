@@ -258,6 +258,40 @@ socket.onmessage = function(event) {
             loadDecks();
             break;
 
+        case "PLAY_CARD_RESPANSE":
+            // Extract card_id from the broadcast payload
+            let playedCardId = null;
+            const payloadData = msg.data || msg; 
+            
+            for (let key in payloadData) {
+                if (key !== "type" && payloadData[key] === "OK") {
+                    playedCardId = key;
+                    break;
+                }
+            }
+
+            if (playedCardId) {
+                const cardElement = document.querySelector(`.card-wrapper[data-id='${playedCardId}']`);
+                const characterArea = document.querySelector('#main .character');
+
+                if (cardElement && characterArea) {
+                    // Physically move the DOM element to the character area
+                    characterArea.appendChild(cardElement);
+                    
+                    // Update the onclick handler so the modal reflects its new location
+                    const imgNode = cardElement.querySelector('img');
+                    if (imgNode) {
+                        let rawSrc = imgNode.getAttribute('src').split('?')[0]; // strip cache buster
+                        if (rawSrc.startsWith(window.location.origin)) {
+                            rawSrc = rawSrc.replace(window.location.origin, '');
+                        }
+                        cardElement.onclick = () => openModal(rawSrc, true, 'character', 'character', playedCardId);
+                    }
+                    console.log(`[FRONTEND] Card ${playedCardId} successfully moved to character area.`);
+                }
+            }
+            break;
+
         case "GAME_START":
         case "BOARD_UPDATE":
             const lobbyUI = document.getElementById('lobby-ui');
@@ -427,6 +461,7 @@ function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false
     return wrapper;
 }
 
+// CHANGED: renderDon now expects [X, Y, Z] format directly 
 function renderDon(donArray, playerId, donImg) {
     const costArea = document.querySelector("#" + playerId + " .cost");
     if (!costArea) return;
@@ -434,15 +469,35 @@ function renderDon(donArray, playerId, donImg) {
     costArea.innerHTML = '';
     if(label) costArea.appendChild(label);
     
-    if (!donArray) return;
+    // Ensure array is properly structured [X, Y, Z]
+    if (!Array.isArray(donArray) || donArray.length !== 3) return;
 
-    const tappedDons = donArray.filter(isTapped => isTapped === true);
-    const untappedDons = donArray.filter(isTapped => isTapped === false);
-    
-    [...tappedDons, ...untappedDons].forEach(isTapped => {
-        // Location = 'cost', Type = 'don'
-        costArea.appendChild(createCardNode(donImg, isTapped, null, false, null, 'cost', 'don'));
-    });
+    const usableX = donArray[0];
+    const tappedY = donArray[1];
+    const deckZ = donArray[2];
+
+    // Render X usable cards (forced horizontal as requested)
+    for (let i = 0; i < usableX; i++) {
+        const card = createCardNode(donImg, false, null, false, null, 'cost', 'don');
+        const imgContainer = card.querySelector('.card-img-container');
+        if (imgContainer) imgContainer.style.transform = 'rotate(90deg)';
+        card.style.margin = '10px 15px'; // Spacing fix for rotation
+        costArea.appendChild(card);
+    }
+
+    // Render Y tapped cards (forced vertical as requested)
+    for (let i = 0; i < tappedY; i++) {
+        const card = createCardNode(donImg, true, null, false, null, 'cost', 'don');
+        const imgContainer = card.querySelector('.card-img-container');
+        if (imgContainer) imgContainer.style.transform = 'rotate(0deg)';
+        costArea.appendChild(card);
+    }
+
+    // Render Z deck (show exactly 1 card if Z > 0)
+    //if (deckZ > 0) {
+    //    const deckCard = createCardNode(donImg, false, `Deck: ${deckZ}`, false, null, 'cost', 'don');
+    //    costArea.appendChild(deckCard);
+    //}
 }
 
 function renderLife(count, playerId, lifeImg) {

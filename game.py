@@ -6,7 +6,7 @@ import get_premad_deck as gpd
 
 # Global lobby registry
 lobbies = {}
-# TODO : add how to play a cards upon receving it
+# TODO : fro cards played chek if the number of DON is good eignef
 class Game:
     def __init__(self,):
         self.players = []
@@ -57,7 +57,10 @@ class Game:
         data[0]["donImg"]= "DON.png"
         data[0]['stageImg']=None
         data[0]['lifeCount']=self.players[0].life
-        data[0]['donCards']=[]
+        
+        # CHANGED: Initialize DON as [X, Y, Z] where X=usable, Y=tapped, Z=deck
+        data[0]['donCards']=[0, 0, 10]
+        
         data[0]['leader']={'img':self.players[0].leader.img,'power':self.players[0].leader.current_power,'is_tapped':False, 'location': 'leader', 'type': 'leader'}
         data[0]['characters']=[]
         data[0]['hand']=[]
@@ -74,7 +77,10 @@ class Game:
         data[1]["donImg"]= "DON.png"
         data[1]['stageImg']=None
         data[1]['lifeCount']=self.players[1].life
-        data[1]['donCards']=[]
+        
+        # CHANGED: Initialize DON as [X, Y, Z] where X=usable, Y=tapped, Z=deck
+        data[1]['donCards']=[0, 0, 10]
+        
         data[1]['leader']={'img':self.players[1].leader.img,'power':self.players[1].leader.current_power,'is_tapped':False, 'location': 'leader', 'type': 'leader'}
         data[1]['characters']=[]
         data[1]['hand']=[]
@@ -134,10 +140,11 @@ async def handler(websocket):
                 # Make sure these actions match the strings sent from handleCardAction in JS
                 if action["action"] in ["PLAY_CARD", "PLAY_CHARACTER", "USE_EVENT", "PLAY_STAGE"]:
                     # FIX: Changed 'match' to 'current_match'
-                    print(current_match.active_player_index,len(current_match.players))
                     current_match.players[current_match.active_player_index].play_character(action['card_id'])
+                    await current_match.broadcast_event("PLAY_CARD_RESPANSE", {action['card_id']:"OK"})
+                    
 
-                    print(f"Player {player.name} will play card {action['card_id']}")
+                    
     except Exception as e:
         print(f"\n[PYTHON ERROR] Something went wrong in the handler: {e}\n")
         

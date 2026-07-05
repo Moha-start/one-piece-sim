@@ -113,7 +113,8 @@ class Player:
         # Board Zones
         self.character_area = {}  # Max 5 CharacterCards
         self.stage_area = None    # Max 1 StageCard
-        self.don_deck = [0,0]
+        # CHANGED: Initialize DON as [X, Y, Z] where X=usable, Y=tapped, Z=deck
+        self.don_deck = [0, 0, 10]
         self.active_don = []
         self.trash = []
 
@@ -122,7 +123,7 @@ class Player:
         if len(self.character_area)>=5:
             print("[PYTHON]the stage if full try later")
             return 
-        card:Card=self.hand.pop(cardId)
+        card:Card=self.hand.pop(uuid.UUID(cardId))
         self.character_area[card.id]=card
         print(f"Player {self.name} will play card {cardId}")
         return True
