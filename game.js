@@ -1,10 +1,5 @@
 console.log("🚀🚀🚀 HELLO FROM GAME.JS! I AM ACTUALLY RUNNING! 🚀🚀🚀");
-// TODO : modify list of action so it depends on the location and type
-// =========================================================
-// --- SMART CACHE & GHOST SESSION BUSTER ---
-// =========================================================
-// We use a synchronous request here to pause the game from loading 
-// until we verify the server version matches the saved version.
+//TODO : add in here so it can ecept : await current_match.broadcast_event("END_ROUND_END", {"STATUS":"OK"}) and work with it
 try {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', '/api/version', false); 
@@ -110,6 +105,22 @@ window.addEventListener('DOMContentLoaded', () => {
         window.location.reload();
     };
     document.body.appendChild(leaveBtn);
+
+    const endRoundBtn = document.createElement('button');
+    endRoundBtn.id = 'end-round-btn';
+    endRoundBtn.innerText = "End Round";
+    endRoundBtn.style.cssText = "position:fixed; bottom:70px; right:20px; z-index:99999; background:#f0932b; color:white; border:2px solid #fff; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display:none;";
+    endRoundBtn.onclick = () => {
+        let playerData = localPlayerName ? { name: localPlayerName } : null;
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                type: "END_ROUND",
+                data: playerData
+            }));
+            console.log("[FRONTEND] End Round sent for:", playerData);
+        }
+    };
+    document.body.appendChild(endRoundBtn);
 });
 
 const originalWebSocket = window.WebSocket;
@@ -302,6 +313,9 @@ socket.onmessage = function(event) {
             
             const sMsg = document.getElementById('status-message');
             if (sMsg) sMsg.style.display = 'none';
+            
+            const endBtn = document.getElementById('end-round-btn');
+            if (endBtn) endBtn.style.display = 'block';
 
             try {
                 const playerData = msg.data || msg.payload || msg.players || (Array.isArray(msg) ? msg : null);
@@ -372,10 +386,8 @@ function openModal(imgSrc, isActionable, location = null, type = null, cardId = 
         
         // 1. If the card is physically in your HAND
         if (location === 'hand') {
-            // FIX: Safely convert the type to a string so arrays don't crash the script!
             let lowerType = String(type || '').toLowerCase();
             
-            // FIX: Use .includes() so it catches 'character' even if it's inside a list
             if (lowerType.includes('character')) {
                 actionBtns.innerHTML += `<button onclick="handleCardAction('PLAY_CHARACTER', '${cardId}')">Play Character</button>`;
             } else if (lowerType.includes('event')) {
@@ -476,12 +488,19 @@ function renderDon(donArray, playerId, donImg) {
     const tappedY = donArray[1];
     const deckZ = donArray[2];
 
-    // Render X usable cards (forced horizontal as requested)
+    // Render X usable cards (now vertical)
     for (let i = 0; i < usableX; i++) {
         const card = createCardNode(donImg, false, null, false, null, 'cost', 'don');
         const imgContainer = card.querySelector('.card-img-container');
-        if (imgContainer) imgContainer.style.transform = 'rotate(90deg)';
-        card.style.margin = '10px 15px'; // Spacing fix for rotation
+        if (imgContainer) imgContainer.style.transform = 'rotate(0deg)';
+        
+        card.style.margin = '0'; // Keep same type cards touching
+
+        // Add a gap after the last usable card if there are tapped cards
+        if (i === usableX - 1 && tappedY > 0) {
+            card.style.marginRight = '25px';
+        }
+
         costArea.appendChild(card);
     }
 
@@ -490,14 +509,11 @@ function renderDon(donArray, playerId, donImg) {
         const card = createCardNode(donImg, true, null, false, null, 'cost', 'don');
         const imgContainer = card.querySelector('.card-img-container');
         if (imgContainer) imgContainer.style.transform = 'rotate(0deg)';
+        
+        card.style.margin = '0'; // Keep same type cards touching
+
         costArea.appendChild(card);
     }
-
-    // Render Z deck (show exactly 1 card if Z > 0)
-    //if (deckZ > 0) {
-    //    const deckCard = createCardNode(donImg, false, `Deck: ${deckZ}`, false, null, 'cost', 'don');
-    //    costArea.appendChild(deckCard);
-    //}
 }
 
 function renderLife(count, playerId, lifeImg) {

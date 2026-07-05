@@ -92,7 +92,7 @@ class Game:
             data[1]['hand'].append({"img": card.img,"cost": card.current_cost,"power": card.current_power,"nb_don": 0,"is_tapped": False,"id":str(getattr(card, 'id', '')), "location": "hand", "type": card_type})
             
         return data
-
+    
 async def handler(websocket):
     print("\n[PYTHON] --- NEW CONNECTION DETECTED! ---")
     current_match = None
@@ -143,7 +143,9 @@ async def handler(websocket):
                     current_match.players[current_match.active_player_index].play_character(action['card_id'])
                     await current_match.broadcast_event("PLAY_CARD_RESPANSE", {action['card_id']:"OK"})
                     
-
+            elif action['type']=="END_ROUND":
+                current_match.active_player_index = (current_match.active_player_index + 1) % 2
+                await current_match.broadcast_event("END_ROUND_END", {"STATUS":"OK"})
                     
     except Exception as e:
         print(f"\n[PYTHON ERROR] Something went wrong in the handler: {e}\n")
