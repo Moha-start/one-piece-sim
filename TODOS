@@ -1,0 +1,5 @@
+T ODO,"The standard tag for tasks, features, or improvements that need to be implemented later."
+F IXME,"Used to mark code that is known to be broken, buggy, or in need of an urgent repair."
+B UG,Specifically used to highlight an identified defect or error in the code that needs investigation.
+H ACK,"Marks a ""quick and dirty"" solution or a temporary workaround that should ideally be cleaned up later."
+X XX,"Often used to flag areas of code that are dangerous, confusing, or highly likely to cause issues (a ""warning"" tag)."

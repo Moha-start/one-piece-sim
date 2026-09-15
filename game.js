@@ -2,8 +2,7 @@ console.log("🚀🚀🚀 HELLO FROM GAME.JS! I AM ACTUALLY RUNNING! 🚀🚀�
 // =========================================================
 // --- SMART CACHE & GHOST SESSION BUSTER ---
 // =========================================================
-// We use a synchronous request here to pause the game from loading 
-// until we verify the server version matches the saved version.
+
 try {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', '/api/version', false); 
@@ -13,23 +12,18 @@ try {
         const serverVersion = JSON.parse(xhr.responseText).version;
         const savedVersion = sessionStorage.getItem('serverVersion');
         
-        // If versions don't match, you restarted the server! 
         if (savedVersion && savedVersion !== serverVersion) {
-            console.log("🔄 Server restart detected! Wiping ghost session...");
-            sessionStorage.clear(); // This deletes the stuck simCode!
-            sessionStorage.setItem('serverVersion', serverVersion); // Save new code
-            window.location.reload(); // Reload cleanly
+            sessionStorage.clear(); 
+            sessionStorage.setItem('serverVersion', serverVersion); 
+            window.location.reload(); 
             throw new Error("Restarting app to clear cache..."); 
-        } 
-        // If it's a completely new visit, just save the ID
-        else if (!savedVersion) {
+        } else if (!savedVersion) {
             sessionStorage.setItem('serverVersion', serverVersion);
         }
     }
 } catch(e) {
     console.warn("Version check bypassed.", e);
 }
-
 
 // =========================================================
 // --- START OF LOBBY SYSTEM ---
@@ -114,14 +108,20 @@ window.addEventListener('DOMContentLoaded', () => {
     endRoundBtn.id = 'end-round-btn';
     endRoundBtn.innerText = "End Round";
     endRoundBtn.style.cssText = "position:fixed; bottom:70px; right:20px; z-index:99999; background:#f0932b; color:white; border:2px solid #fff; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display:none;";
+    
+    // THE FIX: Removed the buggy IF statement and added robust logging
     endRoundBtn.onclick = () => {
+        console.log("⚠️ [FRONTEND] END ROUND BUTTON WAS CLICKED!");
         let playerData = localPlayerName ? { name: localPlayerName } : null;
-        if (socket.readyState === WebSocket.OPEN) {
+        
+        try {
             socket.send(JSON.stringify({
                 type: "END_ROUND",
                 data: playerData
             }));
-            console.log("[FRONTEND] End Round sent for:", playerData);
+            console.log("✅ [FRONTEND] End Round payload successfully sent to server:", playerData);
+        } catch (error) {
+            console.error("❌ [FRONTEND] FAILED to send End Round payload!", error);
         }
     };
     document.body.appendChild(endRoundBtn);
@@ -152,11 +152,6 @@ window.WebSocket = function(url, protocols) {
 };
 
 // =========================================================
-// --- END OF LOBBY SYSTEM ---
-// =========================================================
-
-
-// =========================================================
 // 1. STATE & LOBBY LOGIC
 // =========================================================
 let selectedDeck = null;
@@ -166,7 +161,6 @@ let isMyTurn = false;
 const socket = new WebSocket(`wss://ws.mohamed-server.online`);
 
 function loadDecks() {
-    console.log("[FRONTEND] Requesting decks from /api/decks...");
     const grid = document.getElementById('deck-grid');
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: white; padding: 20px;">Loading decks from server...</div>';
 
@@ -273,14 +267,12 @@ socket.onmessage = function(event) {
             loadDecks();
             break;
 
-case "PLAY_CARD_RESPANSE":
+        case "PLAY_CARD_RESPANSE":
             const payloadData = msg.data || msg;
             
-            // 1. Grab the exact card and the player who played it
             let playedCardId = payloadData.card_id;
             let playerWhoPlayed = payloadData.player_name;
 
-            // Fallback just in case the backend hasn't restarted yet
             if (!playedCardId) {
                 for (let key in payloadData) {
                     if (key !== "type" && payloadData[key] === "OK") {
@@ -291,33 +283,59 @@ case "PLAY_CARD_RESPANSE":
 
             if (playedCardId) {
                 const cardElement = document.querySelector(`.card-wrapper[data-id='${playedCardId}']`);
-                
-                // 2. THE FIX: Dynamically select the board side based on the player
                 const targetBoard = (playerWhoPlayed === localPlayerName) ? '#main' : '#opponent';
                 const characterArea = document.querySelector(`${targetBoard} .character`);
 
                 if (cardElement && characterArea) {
-                    // Physically move the DOM element to the correct character area
+                    // Move the card from the hand to the board
                     characterArea.appendChild(cardElement);
                     
-                    // 3. Update the onclick handler
                     const imgNode = cardElement.querySelector('img');
                     if (imgNode) {
-                        let rawSrc = imgNode.getAttribute('src').split('?')[0]; // strip cache buster
+                        // FIX 1: Reveal Image from payload OR from the secret dataset we saved in setHand!
+                        let realImg = payloadData.img || (payloadData.card && payloadData.card.img) || cardElement.dataset.realImg;
+                        if (realImg) {
+                            imgNode.src = getImagePath(realImg);
+                            imgNode.onerror = () => handleImageError(imgNode, realImg);
+                        }
+
+                        // Re-fetch the updated rawSrc after revealing the face
+                        let rawSrc = imgNode.getAttribute('src').split('?')[0]; 
                         if (rawSrc.startsWith(window.location.origin)) {
                             rawSrc = rawSrc.replace(window.location.origin, '');
                         }
-                        
-                        // Prevent the local player from interacting with the opponent's cards
+
+                        // FIX 2: Generate missing stats for opponent's cards from the secret dataset
+                        if (playerWhoPlayed !== localPlayerName) {
+                            let cCost = payloadData.cost !== undefined ? payloadData.cost : (payloadData.card && payloadData.card.cost !== undefined ? payloadData.card.cost : cardElement.dataset.cost);
+                            let cPow = payloadData.power !== undefined ? payloadData.power : (payloadData.card && payloadData.card.power !== undefined ? payloadData.card.power : cardElement.dataset.power);
+                            let cDon = payloadData.nb_don !== undefined ? payloadData.nb_don : (payloadData.card && payloadData.card.nb_don !== undefined ? payloadData.card.nb_don : cardElement.dataset.don);
+
+                            if (cCost !== undefined && cCost !== null && cCost !== "") {
+                                let statsDiv = cardElement.querySelector('.card-stats');
+                                if (!statsDiv) {
+                                    statsDiv = document.createElement('div');
+                                    statsDiv.className = 'card-stats';
+                                    cardElement.appendChild(statsDiv);
+                                }
+                                statsDiv.innerHTML = "C:" + cCost + " | P:" + (cPow || 0) + " | DONx" + (cDon || 0);
+                            }
+                        }
+
                         const isActionableForMe = (playerWhoPlayed === localPlayerName);
-                        cardElement.onclick = () => openModal(rawSrc, isActionableForMe, 'character', 'character', playedCardId);
+                        
+                        // FIX 3: Pull correct Type & Location from the secret dataset so the Modal works!
+                        let cardLoc = payloadData.location || (payloadData.card && payloadData.card.location) || cardElement.dataset.loc || 'character';
+                        let cardType = payloadData.type || (payloadData.card && payloadData.card.type) || cardElement.dataset.typ || 'character';
+                        
+                        cardElement.onclick = () => openModal(rawSrc, isActionableForMe, cardLoc, cardType, playedCardId);
                     }
-                    console.log(`[FRONTEND] Card ${playedCardId} successfully moved to ${targetBoard} area.`);
                 }
             }
             break;
 
         case "GAME_START":
+
         case "BOARD_UPDATE":
             const lobbyUI = document.getElementById('lobby-ui');
             if (lobbyUI) lobbyUI.style.display = 'none';
@@ -336,7 +354,6 @@ case "PLAY_CARD_RESPANSE":
                 let opponent = playerData.find(p => p.name !== localPlayerName);
 
                 if (!mainPlayer || !opponent) {
-                    console.warn("[FRONTEND] Name mismatch! Defaulting to Player 1 as Main.");
                     mainPlayer = playerData[0];
                     opponent = playerData[1];
                 }
@@ -349,14 +366,14 @@ case "PLAY_CARD_RESPANSE":
             break;
         
         case "END_ROUND_END":
-            // Check if status is OK (handle both nested msg.data.STATUS or direct msg.STATUS)
-            const status = msg.data?.STATUS || msg.STATUS;
+            console.log("⚠️ [FRONTEND] RECEIVED END_ROUND_END FROM SERVER!", msg);
             
-            if (status === "OK") {
-                // Toggle the global turn variable
-                isMyTurn = !isMyTurn;
+            const status = msg.data?.STATUS || msg.STATUS;
+            const activePlayer = msg.data?.active_player || msg.active_player;
+            
+            if (status === "OK" && activePlayer) {
+                isMyTurn = (activePlayer === localPlayerName);
                 
-                // Automatically flip the visual highlights on the UI
                 const mNameEl = document.getElementById('main-name');
                 const oNameEl = document.getElementById('opp-name');
                 
@@ -369,13 +386,14 @@ case "PLAY_CARD_RESPANSE":
                     oNameEl.style.fontWeight = !isMyTurn ? "bold" : "normal";
                 }
 
-                // Hide or show the End Round button based on whose turn it is
                 const endBtn = document.getElementById('end-round-btn');
                 if (endBtn) {
                     endBtn.style.display = isMyTurn ? 'block' : 'none';
                 }
 
-                console.log("[FRONTEND] End round received! Switched primary player. isMyTurn:", isMyTurn);
+                console.log(`✅ [FRONTEND] UI Updated! It is now ${activePlayer}'s turn. isMyTurn: ${isMyTurn}`);
+            } else {
+                console.warn("❌ [FRONTEND] Received malformed END_ROUND_END payload.");
             }
             break;
     }
@@ -395,20 +413,17 @@ function handleImageError(imgElement, originalSrc) {
     imgElement.style.border = '2px solid #ff4444'; 
     imgElement.style.backgroundColor = '#4a0000';
 }
-function handleCardAction(actionName, cardId) {
-    // 1. Close the modal so it gets out of the way
-    document.getElementById('card-modal').style.display = 'none';
 
-    // 2. Send the action and the card ID to your Python backend
+function handleCardAction(actionName, cardId) {
+    document.getElementById('card-modal').style.display = 'none';
     socket.send(JSON.stringify({
         type: "CARD_ACTION",
         action: actionName,
         card_id: cardId,
         player_name: localPlayerName 
     }));
-
-    console.log(`Sent action: ${actionName} for card: ${cardId}`);
 }
+
 function openModal(imgSrc, isActionable, location = null, type = null, cardId = null) {
     const modal = document.getElementById('card-modal');
     const modalImg = document.getElementById('modal-img');
@@ -417,19 +432,13 @@ function openModal(imgSrc, isActionable, location = null, type = null, cardId = 
     modalImg.src = getImagePath(imgSrc);
     
     const activeTurn = (isMyTurn === true || String(isMyTurn).toLowerCase() === 'true');
-    console.log(`[MODAL CLICK] Is it your turn? ${activeTurn} | Is card actionable? ${isActionable} | Location: ${location} | Type: ${type}`);
     
-    // Clear out current buttons so we can dynamically add based on location AND type
     actionBtns.innerHTML = '';
     
     if (isActionable && activeTurn) {
-        
-        // --- EASILY MODIFIABLE ACTION BUTTONS START ---
-        
-        // 1. If the card is physically in your HAND
         if (location === 'hand') {
             let lowerType = String(type || '').toLowerCase();
-            
+            console.log(lowerType+"////////////"+location)
             if (lowerType.includes('character')) {
                 actionBtns.innerHTML += `<button onclick="handleCardAction('PLAY_CHARACTER', '${cardId}')">Play Character</button>`;
             } else if (lowerType.includes('event')) {
@@ -441,35 +450,23 @@ function openModal(imgSrc, isActionable, location = null, type = null, cardId = 
             }
             actionBtns.innerHTML += `<button onclick="handleCardAction('TRASH_CARD', '${cardId}')">Trash</button>`;
         }
-        
-        // 2. If the card is physically on the BOARD in the CHARACTER AREA
         else if (location === 'character') {
             actionBtns.innerHTML += `<button onclick="handleCardAction('TOGGLE_REST', '${cardId}')">Rest / Set Active</button>`;
             actionBtns.innerHTML += `<button onclick="handleCardAction('ATTACK', '${cardId}')">Attack</button>`;
         } 
-        
-        // 3. If the card is physically in the LEADER AREA
         else if (location === 'leader') {
             actionBtns.innerHTML += `<button onclick="handleCardAction('TOGGLE_REST', '${cardId}')">Rest / Set Active</button>`;
             actionBtns.innerHTML += `<button onclick="handleCardAction('ATTACK', '${cardId}')">Attack</button>`;
         } 
-        
-        // 4. If the card is physically in the COST AREA (DON deck)
         else if (location === 'cost') {
             actionBtns.innerHTML += `<button onclick="handleCardAction('ATTACH_DON', '${cardId}')">Attach DON!!</button>`;
         }
-        
-        // 5. If the card is physically in the STAGE AREA
         else if (location === 'stage') {
             actionBtns.innerHTML += `<button onclick="handleCardAction('USE_STAGE_EFFECT', '${cardId}')">Use Effect</button>`;
         }
-        
-        // Fallback
         else {
             actionBtns.innerHTML += `<button>Default Action</button>`;
         }
-        
-        // --- EASILY MODIFIABLE ACTION BUTTONS END ---
         
         actionBtns.style.display = 'flex';
     } else {
@@ -515,7 +512,6 @@ function createCardNode(imgSrc, isTapped, statsText = null, isActionable = false
     return wrapper;
 }
 
-// CHANGED: renderDon now expects [X, Y, Z] format directly 
 function renderDon(donArray, playerId, donImg) {
     const costArea = document.querySelector("#" + playerId + " .cost");
     if (!costArea) return;
@@ -523,37 +519,28 @@ function renderDon(donArray, playerId, donImg) {
     costArea.innerHTML = '';
     if(label) costArea.appendChild(label);
     
-    // Ensure array is properly structured [X, Y, Z]
     if (!Array.isArray(donArray) || donArray.length !== 3) return;
 
     const usableX = donArray[0];
     const tappedY = donArray[1];
     const deckZ = donArray[2];
 
-    // Render X usable cards (now vertical)
     for (let i = 0; i < usableX; i++) {
         const card = createCardNode(donImg, false, null, false, null, 'cost', 'don');
         const imgContainer = card.querySelector('.card-img-container');
         if (imgContainer) imgContainer.style.transform = 'rotate(0deg)';
-        
-        card.style.margin = '0'; // Keep same type cards touching
-
-        // Add a gap after the last usable card if there are tapped cards
+        card.style.margin = '0'; 
         if (i === usableX - 1 && tappedY > 0) {
             card.style.marginRight = '25px';
         }
-
         costArea.appendChild(card);
     }
 
-    // Render Y tapped cards (forced vertical as requested)
     for (let i = 0; i < tappedY; i++) {
         const card = createCardNode(donImg, true, null, false, null, 'cost', 'don');
         const imgContainer = card.querySelector('.card-img-container');
         if (imgContainer) imgContainer.style.transform = 'rotate(0deg)';
-        
-        card.style.margin = '0'; // Keep same type cards touching
-
+        card.style.margin = '0'; 
         costArea.appendChild(card);
     }
 }
@@ -569,7 +556,6 @@ function renderLife(count, playerId, lifeImg) {
     for (let i = 0; i < safeCount; i++) {
         const cardDiv = document.createElement('div');
         cardDiv.className = 'life-card-wrapper';
-        // Location = 'life', Type = 'card' (or life)
         cardDiv.onclick = () => openModal(lifeImg, false, 'life', 'card');
 
         const img = document.createElement('img');
@@ -591,7 +577,6 @@ function setLeader(leaderData, playerId) {
     if (leaderData && leaderData.img && leaderData.img !== "") {
         const stats = "PWR: " + leaderData.power;
         const isActionable = (playerId === 'main'); 
-        // Location = 'leader', Type = 'leader'
         leaderArea.appendChild(createCardNode(leaderData.img, leaderData.is_tapped, stats, isActionable, leaderData.id, 'leader', 'leader'));
     }
 }
@@ -608,7 +593,6 @@ function setStage(stageData, playerId) {
 
     if (imagePath && imagePath !== "") {
         const isActionable = (playerId === 'main');
-        // Location = 'stage', Type = 'stage'
         stageArea.appendChild(createCardNode(imagePath, false, null, isActionable, stageId, 'stage', 'stage'));
     }
 }
@@ -629,7 +613,6 @@ function setCharacterArea(charactersData, playerId) {
         if(loc === 'character') {
             const stats = "C:" + char.cost + " | P:" + char.power + " | DONx" + char.nb_don;
             const isActionable = (playerId === 'main'); 
-            // Ensures both location and type are explicitly passed along
             charArea.appendChild(createCardNode(char.img, char.is_tapped, stats, isActionable, char.id, loc, typ));
         }
     });
@@ -646,7 +629,6 @@ function setDeck(playerId, deckImg) {
     img.src = getImagePath(deckImg);
     img.onerror = () => handleImageError(img, deckImg);
     
-    // Location = 'deck', Type = 'card'
     img.onclick = () => openModal(deckImg, false, 'deck', 'card');
     deckArea.appendChild(img);
 }
@@ -665,7 +647,16 @@ function setHand(handData, playerId, isOpponent, cardBackImg) {
         let typ = card.type || 'card';
         
         if (isOpponent) {
-            handArea.appendChild(createCardNode(cardBackImg, false, null, false, card.id, loc, typ));
+            let node = createCardNode(cardBackImg, false, null, false, card.id, loc, typ);
+            // THE FIX: Secretly stash the real card data so we can reveal it later when played
+            if (card.img) node.dataset.realImg = card.img;
+            if (card.cost !== undefined) node.dataset.cost = card.cost;
+            if (card.power !== undefined) node.dataset.power = card.power;
+            if (card.nb_don !== undefined) node.dataset.don = card.nb_don;
+            if (card.type) node.dataset.typ = card.type;
+            if (card.location) node.dataset.loc = card.location;
+            
+            handArea.appendChild(node);
         } else {
             const stats = "C:" + card.cost + " | P:" + card.power + " | DONx" + card.nb_don;
             handArea.appendChild(createCardNode(card.img, card.is_tapped, stats, true, card.id, loc, typ));
@@ -678,9 +669,7 @@ function buildBoard(mainData, oppData) {
     const oppNameEl = document.getElementById('opp-name');
 
     isMyTurn = (mainData.is_active === true || String(mainData.is_active).toLowerCase() === 'true');
-    console.log(`[BOARD RENDER] Is it my turn?`, isMyTurn);
 
-    // Toggle End Round Button visibility
     const endBtn = document.getElementById('end-round-btn');
     if (endBtn) {
         endBtn.style.display = isMyTurn ? 'block' : 'none';
@@ -701,7 +690,6 @@ function buildBoard(mainData, oppData) {
         oppNameEl.style.fontWeight = isOppActive ? "bold" : "normal";
     }
 
-    // Build Main Player Side
     setLeader(mainData.leader, 'main');
     setStage(mainData.stageImg, 'main');
     setDeck('main', mainData.cardBackImg);
@@ -710,7 +698,6 @@ function buildBoard(mainData, oppData) {
     setCharacterArea(mainData.characters, 'main');
     setHand(mainData.hand, 'main', false, mainData.cardBackImg);
 
-    // Build Opponent Side
     setLeader(oppData.leader, 'opponent');
     setStage(oppData.stageImg, 'opponent');
     setDeck('opponent', oppData.cardBackImg);

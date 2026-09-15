@@ -128,7 +128,12 @@ class Player:
         print(f"Player {self.name} will play card {cardId}")
         return True
         
-        
+    def play_stage(self,cardId):
+        card:Card=self.hand.pop(uuid.UUID(cardId))
+        self.stage_area=card
+        print(f"Player {self.name} will play card {cardId}")
+        return True
+    
     def draw_card(self):
         if not self.deck.is_empty():
             card = self.deck.get()
